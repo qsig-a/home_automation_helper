@@ -9,6 +9,6 @@ ADD board.py board.py
 ADD main.py main.py
 ADD requirements.txt requirements.txt
 
-RUN pip install -r $DIR/requirements.txt
+RUN pip install -r requirements.txt
 
 CMD [ "python", "./main.py" ]
