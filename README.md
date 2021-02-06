@@ -9,8 +9,6 @@ VESTABOARD_API_KEY = API Key from Vestaboard Installable API Key Creation
 
 VESTABOARD_API_SECRET = API Secret from Vestaboard Installable API Key Creation
 
-VESTABOARD_SUB_ID = Subscription ID for the particular Vestaboard (Maybe I'll change so that it fetches it upon startup)
-
 
 ### Enabled a random quote generator sourced from a mysql DB
 SAYING_DB_HOST
