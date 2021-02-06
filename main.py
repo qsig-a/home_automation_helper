@@ -1,13 +1,13 @@
 from flask import Flask,request
 import games.boggle as bg
 import board
-import sayings.sayings_proc as say
+import sayings.sayings as say
 import os,time,threading
 
 app = Flask(__name__)
 
-#Boggle 4x4 or 5x5 Game with 3 minute and 20 second timer
 @app.route("/games/boggle",methods=['POST'])
+#Boggle 4x4 or 5x5 Game with 3 minute and 20 second timer
 def boggle4():
     data = request.form
     if "size" in data:
@@ -31,8 +31,8 @@ def boggle4():
             else:
                 return "Wrong size boggle game!",400
 
-#GetSingleRandomQuote from local DB
 @app.route("/quote",methods=['GET'])
+#GetSingleRandomQuote from local DB
 def GetSingleRandomQuote():
     data = say.GetSingleRandQuote()
     if len(data) > 0:
@@ -42,8 +42,8 @@ def GetSingleRandomQuote():
         else:
             return "Error getting quote",500
 
-# Post message to Vestaboard
 @app.route("/message",methods=['POST'])
+# Post message to Vestaboard
 def message():
     data = request.form
     if "message" in data:
@@ -61,11 +61,17 @@ def message():
     else:
         return "No message was receieved",400
         
-# Home/Health Check?
 @app.route("/")
+# Home/Health Check?
 def home():
     return "Hello, World! I am the vestaboard bot" 
 
 # Run the thing
 if __name__ == "__main__":
+    #Get Vestaboard Subscription first
+    v_subid = board.GetSubscriptionId()
+    if len(v_subid) == 0:
+        print("Error getting subscription ID from Vestaboard API!")
+    else:
+        os.environ["VESTABOARD_SUB_ID"] = v_subid
     app.run(host="0.0.0.0",debug=False,port=int(os.environ.get('PORT', 3020)))
