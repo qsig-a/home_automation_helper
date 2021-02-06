@@ -5,6 +5,7 @@ vim
 RUN pip install --upgrade pip
 
 ADD games /games
+ADD sayings /sayings
 ADD board.py board.py
 ADD main.py main.py
 ADD requirements.txt requirements.txt

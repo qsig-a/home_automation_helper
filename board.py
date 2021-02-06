@@ -1,5 +1,5 @@
 import requests,re
-import os
+import os,time
 
 # Auth
 v_auth = {
@@ -12,11 +12,20 @@ v_auth = {
 headers = {'X-Vestaboard-Api-Key': v_auth.get("v_apik"),
     'X-Vestaboard-Api-Secret' : v_auth.get("v_apis"),
     'Content-Type': 'application/json'}
-
 url = "https://platform.vestaboard.com/subscriptions/" + v_auth.get("v_subid") + "/message"
 
 #SendArray
 def SendArray(data):
+    data = {"characters" : data}
+    r = requests.post(url=url,headers=headers,json=data)
+    if r.status_code == 200:
+        return 0
+    else:
+        return 1
+
+#SendArrayDelay
+def SendArrayDelay(data):
+    time.sleep(200)
     data = {"characters" : data}
     r = requests.post(url=url,headers=headers,json=data)
     if r.status_code == 200:
