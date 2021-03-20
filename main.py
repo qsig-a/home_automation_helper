@@ -32,7 +32,7 @@ def boggle4():
                 return "Wrong size boggle game!",400
 
 @app.route("/quote",methods=['GET'])
-#GetSingleRandomQuote from local DB
+# Get random quote from local DB
 def GetSingleRandomQuote():
     data = say.GetSingleRandQuote()
     if len(data) > 0:
@@ -41,6 +41,17 @@ def GetSingleRandomQuote():
             return "Random quote queued"
         else:
             return "Error getting quote",500
+
+@app.route("/meme",methods=['GET'])
+#Get random meme from local DB
+def GetSingleRandomMeme():
+    data = say.GetSingleRandMeme()
+    if len(data) > 0:
+        send = board.SendMessage(data)
+        if send == 0:
+            return "Random meme queued"
+        else:
+            return "Error getting meme",500
 
 @app.route("/message",methods=['POST'])
 # Post message to Vestaboard

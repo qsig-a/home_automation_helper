@@ -1,0 +1,7 @@
+.env
+sayings/.env
+.dockerignore
+__pycache__/
+sayings/__pycache__/
+ganes/__pycache__/
+.vscode
