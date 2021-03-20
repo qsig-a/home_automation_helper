@@ -34,24 +34,30 @@ def boggle4():
 @app.route("/quote",methods=['GET'])
 # Get random quote from local DB
 def GetSingleRandomQuote():
-    data = say.GetSingleRandQuote()
-    if len(data) > 0:
-        send = board.SendMessage(data)
-        if send == 0:
-            return "Random quote queued"
-        else:
-            return "Error getting quote",500
+    if os.environ['SAYING_DB_ENABLE'] == "1":
+        data = say.GetSingleRandQuote()
+        if len(data) > 0:
+            send = board.SendMessage(data)
+            if send == 0:
+                return "Random quote queued"
+            else:
+                return "Error getting quote",500
+    else:
+        return "Sayings DB Not Enabled",405
 
 @app.route("/meme",methods=['GET'])
 #Get random meme from local DB
 def GetSingleRandomMeme():
-    data = say.GetSingleRandMeme()
-    if len(data) > 0:
-        send = board.SendMessage(data)
-        if send == 0:
-            return "Random meme queued"
-        else:
-            return "Error getting meme",500
+    if os.environ['SAYING_DB_ENABLE'] == "1":
+        data = say.GetSingleRandMeme()
+        if len(data) > 0:
+            send = board.SendMessage(data)
+            if send == 0:
+                return "Random meme queued"
+            else:
+                return "Error getting meme",500
+    else:
+        return "Sayings DB Not Enabled",405
 
 @app.route("/message",methods=['POST'])
 # Post message to Vestaboard
@@ -85,4 +91,4 @@ if __name__ == "__main__":
         print("Error getting subscription ID from Vestaboard API!")
     else:
         os.environ["VESTABOARD_SUB_ID"] = v_subid
-    app.run(host="0.0.0.0",debug=False,port=int(os.environ.get('PORT', 3020)))
+    app.run(host="0.0.0.0",debug=False,port=int(os.environ.get('PORT')))

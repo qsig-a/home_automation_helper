@@ -5,7 +5,7 @@ import mysql.connector
 db_user = os.environ['SAYING_DB_USER']
 db_passwd = os.environ['SAYING_DB_PASS']
 db_host = os.environ['SAYING_DB_HOST']
-db_port = 6033
+db_port = os.environ['SAYING_DB_PORT']
 db_db = os.environ['SAYING_DB_NAME']
 
 def GetSingleRandQuote():

@@ -11,6 +11,8 @@ VESTABOARD_API_SECRET = API Secret from Vestaboard Installable API Key Creation
 
 
 ### Enabled a random quote generator sourced from a mysql DB
+SAYING_DB_ENABLE = 1 (1 for enabled, 0 for disabled (default))
+
 SAYING_DB_HOST
 
 SAYING_DB_NAME
@@ -18,6 +20,8 @@ SAYING_DB_NAME
 SAYING_DB_PASS
 
 SAYING_DB_USER
+
+SAYING_DB_PORT
 
 
 DB Schema is just a table named `sayings` with a column named `quote`.  I also put `source` as a column in case I wanted to display it later.
