@@ -1,0 +1,20 @@
+name: Docker Image CI
+
+on:
+  push:
+    branches: [ master ]
+
+jobs:
+
+  build:
+
+    runs-on: self-hosted
+
+    steps:
+    -
+      name: Build and push to local registry
+      uses: docker/build-push-action@v2
+      with:
+        context: .
+        push: true
+        tags: localhost:5000/name/${{ github.repository }}:${{ github.sha }}
