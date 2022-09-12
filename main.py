@@ -59,6 +59,34 @@ def GetSingleRandomMeme():
     else:
         return "Sayings DB Not Enabled",405
 
+@app.route("/sfw_saying",methods=['GET'])
+# Get random SFW saying from local DB
+def GetSingleRandomQuote():
+    if os.environ['SAYING_DB_ENABLE'] == "1":
+        data = say.GetSingleRandSfwS()
+        if len(data) > 0:
+            send = board.SendMessage(data)
+            if send == 0:
+                return "Random sfw saying queued"
+            else:
+                return "Error getting sfw quote",500
+    else:
+        return "Sayings DB Not Enabled",405
+
+@app.route("/nsfw_saying",methods=['GET'])
+# Get random NSFW saying from local DB
+def GetSingleRandomQuote():
+    if os.environ['SAYING_DB_ENABLE'] == "1":
+        data = say.GetSingleRandNsfwS()
+        if len(data) > 0:
+            send = board.SendMessage(data)
+            if send == 0:
+                return "Random nsfw saying queued"
+            else:
+                return "Error getting nsfw quote",500
+    else:
+        return "Sayings DB Not Enabled",405
+
 @app.route("/message",methods=['POST'])
 # Post message to Vestaboard
 def message():
