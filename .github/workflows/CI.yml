@@ -15,10 +15,9 @@ jobs:
     - uses: actions/checkout@v1
     - name: Login to GitHub Package Registry
       run: echo "${{ secrets.DOCKER_PASSWORD }}" | docker login {{LOCAL_REPO}} -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
-    -
-      name: Build and push to local registry
+    - name: Build and push to local registry
       uses: docker/build-push-action@v2
       with:
         context: .
         push: true
-        tags: "${{ secrets.LOCAL_REPO }}"/name/${{ github.repository }}:${{ github.sha }}
+        tags: ${{ secrets.LOCAL_REPO }}/name/${{ github.repository }}:${{ github.sha }}
