@@ -5,3 +5,4 @@ __pycache__/
 sayings/__pycache__/
 ganes/__pycache__/
 .vscode
+local-*
