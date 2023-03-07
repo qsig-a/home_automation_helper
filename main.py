@@ -61,7 +61,7 @@ def GetSingleRandomMeme():
 
 @app.route("/sfw_saying",methods=['GET'])
 # Get random SFW saying from local DB
-def GetSingleRandomQuote():
+def GetSingleRandomQuoteSFW():
     if os.environ['SAYING_DB_ENABLE'] == "1":
         data = say.GetSingleRandSfwS()
         if len(data) > 0:
@@ -75,7 +75,7 @@ def GetSingleRandomQuote():
 
 @app.route("/nsfw_saying",methods=['GET'])
 # Get random NSFW saying from local DB
-def GetSingleRandomQuote():
+def GetSingleRandomQuoteNsfw():
     if os.environ['SAYING_DB_ENABLE'] == "1":
         data = say.GetSingleRandNsfwS()
         if len(data) > 0:
