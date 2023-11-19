@@ -1,6 +1,8 @@
-# Vestaboard Server
+# Home automation server
 
-Fun uses for the [Vestaboard](https://www.vestaboard.com/).  It is also used to linked to my Home Automation system easier since it exposes the sending a message function easier.
+Just a collection of uses and connectors for my home automation uses.
+
+One such use is for [Vestaboard](https://www.vestaboard.com/).
 
 ## Environment variables for the docker image
 PORT (Defaults to 3020 if not set) for web listening port
