@@ -43,4 +43,4 @@ def GetOCTranspoStopInfo(stopNo):
     for route, bus_times in next_busses_dict.items():
         table.add_row([route, ', '.join(bus_times)])
 
-    return(table)
+    return(table.get_string())
