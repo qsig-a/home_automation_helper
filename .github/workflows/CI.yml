@@ -23,4 +23,4 @@ jobs:
         uses: docker/build-push-action@v4
         with:
           push: true
-          tags: qsig/vestaboard_server:latest
+          tags: qsig/home_automation_helper:latest

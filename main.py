@@ -1,6 +1,7 @@
 from flask import Flask,request
 import games.boggle as bg
-import board
+import connectors.vestaboard as board
+import connectors.octranspo as octranspo
 import sayings.sayings as say
 import os,time,threading
 
@@ -105,11 +106,28 @@ def message():
             return "No data in message",400
     else:
         return "No message was receieved",400
+
+@app.route("/octranspo_stop",methods=['POST'])
+# Get OC Transpo Stop Info
+def octranspo_stop():
+    if os.environ['OC_ENABLE'] == "1":
+        data = request.form
+        if "stop" in data:
+            stop = data.get("stop")
+            if stop.isdigit() and len(stop) == 4:
+                stop_data = octranspo.GetOCTranspoStopInfo(stop)
+                if stop_data == 1:
+                    return "Error obtaining stop information",500
+                else:
+                    return stop_data, 200
+    else:
+        return "OCTranspo Not Enabled",405
+            
         
 @app.route("/")
 # Home/Health Check?
 def home():
-    return "Hello, World! I am the vestaboard bot" 
+    return "Hello, World! I am the home automation helper" 
 
 # Run the thing
 if __name__ == "__main__":
