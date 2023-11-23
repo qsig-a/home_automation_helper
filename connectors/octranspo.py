@@ -1,24 +1,21 @@
 import requests as re
 import os
 from prettytable import PrettyTable
+import json
 
 oc_appID = os.getenv('OCTRANSPO_APPID')
 oc_apiKey = os.getenv('OCTRANSPO_APIKEY')
 
-def GetOCTranspoStopInfo(stopNo):
-
+def GetOCTranspoStopInfo(stopNo, output_format="table"):
     base_stop_url = "https://api.octranspo1.com/v2.0/GetNextTripsForStop"
     
     query_params = {
-    'appID': oc_appID,
-    'apiKey': oc_apiKey,
-    'stopNo': stopNo
+        'appID': oc_appID,
+        'apiKey': oc_apiKey,
+        'stopNo': stopNo
     }
 
     next_busses_dict = {}
-
-    table = PrettyTable()
-    table.field_names = ["Route Number", "Route Label", "Bus Times"]
 
     response = re.get(base_stop_url, params=query_params)
 
@@ -27,7 +24,6 @@ def GetOCTranspoStopInfo(stopNo):
         for route in data['GetNextTripsForStopResult']['Route']['RouteDirection']:
             routeNo = route['RouteNo']
             routeLabel = route['RouteLabel']
-            # Check if the routeNo and routeLabel combination exists in the dictionary, if not, initialize it with a tuple (list, routeLabel)
             key = (routeNo, routeLabel)
             if key not in next_busses_dict:
                 next_busses_dict[key] = ([], routeLabel)
@@ -37,11 +33,23 @@ def GetOCTranspoStopInfo(stopNo):
                     next_busses_dict[key][0].append(trip['AdjustedScheduleTime'] + "*")
                 else:
                     next_busses_dict[key][0].append(trip['AdjustedScheduleTime'])
-
     else:
-        print(f"Error: {response.status_code}, {response.text}")
+        error_message = {"error": f"{response.status_code}, {response.text}"}
+        return json.dumps(error_message, indent=2) if output_format == "json" else str(error_message)
 
-    for (routeNo, routeLabel), (bus_times, _) in next_busses_dict.items():
-        table.add_row([routeNo, routeLabel, ', '.join(bus_times)])
-
-    return(table.get_string())
+    if output_format == "json":
+        result_dict = {}
+        for (routeNo, routeLabel), (bus_times, _) in next_busses_dict.items():
+            result_dict[routeNo] = {
+                "RouteLabel": routeLabel,
+                "BusTimes": bus_times
+            }
+        return json.dumps(result_dict, indent=2)
+    elif output_format == "table":
+        table = PrettyTable()
+        table.field_names = ["Route Number", "Route Label", "Bus Times"]
+        for (routeNo, routeLabel), (bus_times, _) in next_busses_dict.items():
+            table.add_row([routeNo, routeLabel, ', '.join(bus_times)])
+        return table.get_string()
+    else:
+        return "Invalid output format. Please use 'json' or 'table'."

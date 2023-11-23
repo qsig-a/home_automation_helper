@@ -114,8 +114,9 @@ def octranspo_stop():
         data = request.form
         if "stop" in data:
             stop = data.get("stop")
-            if stop.isdigit() and len(stop) == 4:
-                stop_data = octranspo.GetOCTranspoStopInfo(stop)
+            format = data.get("format")
+            if stop.isdigit() and len(stop) == 4 and format in ['table','json']:
+                stop_data = octranspo.GetOCTranspoStopInfoTable(stop, format)
                 if stop_data == 1:
                     return "Error obtaining stop information",500
                 else:
