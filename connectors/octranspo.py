@@ -24,10 +24,11 @@ def GetOCTranspoStopInfo(stopNo, output_format):
         for route in data['GetNextTripsForStopResult']['Route']['RouteDirection']:
             routeNo = route['RouteNo']
             routeLabel = route['RouteLabel']
-            key = (routeNo, routeLabel)
+            key = routeLabel  # Use route label as the key
+
             if key not in next_busses_dict:
-                next_busses_dict[key] = ([], routeLabel)
-            
+                next_busses_dict[key] = ([], routeNo)  # You can also include route number in the value if needed
+
             for trip in route['Trips']['Trip']:
                 if len(trip['GPSSpeed']) > 0:
                     next_busses_dict[key][0].append(trip['AdjustedScheduleTime'] + "*")
@@ -39,17 +40,17 @@ def GetOCTranspoStopInfo(stopNo, output_format):
 
     if output_format == "json":
         result_dict = {}
-        for (routeNo, routeLabel), (bus_times, _) in next_busses_dict.items():
-            result_dict[routeNo] = {
-                "RouteLabel": routeLabel,
+        for routeLabel, (bus_times, routeNo) in next_busses_dict.items():
+            result_dict[routeLabel] = {
+                "RouteNumber": routeNo,
                 "BusTimes": bus_times
             }
         return json.dumps(result_dict, indent=2)
     elif output_format == "table":
         table = PrettyTable()
-        table.field_names = ["Route Number", "Route Label", "Bus Times"]
-        for (routeNo, routeLabel), (bus_times, _) in next_busses_dict.items():
-            table.add_row([routeNo, routeLabel, ', '.join(bus_times)])
+        table.field_names = ["Route Label", "Route Number", "Bus Times"]
+        for routeLabel, (bus_times, routeNo) in next_busses_dict.items():
+            table.add_row([routeLabel, routeNo, ', '.join(bus_times)])
         return table.get_string()
     else:
         return "Invalid output format. Please use 'json' or 'table'."
