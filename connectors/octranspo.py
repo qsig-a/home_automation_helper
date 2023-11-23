@@ -6,7 +6,7 @@ import json
 oc_appID = os.getenv('OCTRANSPO_APPID')
 oc_apiKey = os.getenv('OCTRANSPO_APIKEY')
 
-def GetOCTranspoStopInfo(stopNo, output_format="table"):
+def GetOCTranspoStopInfo(stopNo, output_format):
     base_stop_url = "https://api.octranspo1.com/v2.0/GetNextTripsForStop"
     
     query_params = {
