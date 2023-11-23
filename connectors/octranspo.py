@@ -18,7 +18,7 @@ def GetOCTranspoStopInfo(stopNo):
     next_busses_dict = {}
 
     table = PrettyTable()
-    table.field_names = ["Route Number", "Bus Times"]
+    table.field_names = ["Route Number", "Route Label", "Bus Times"]
 
     response = re.get(base_stop_url, params=query_params)
 
@@ -26,21 +26,22 @@ def GetOCTranspoStopInfo(stopNo):
         data = response.json()
         for route in data['GetNextTripsForStopResult']['Route']['RouteDirection']:
             routeNo = route['RouteNo']
-            
-            # Check if the routeNo key exists in the dictionary, if not, initialize it with an empty list
-            if routeNo not in next_busses_dict:
-                next_busses_dict[routeNo] = []
+            routeLabel = route['RouteLabel']
+            # Check if the routeNo and routeLabel combination exists in the dictionary, if not, initialize it with a tuple (list, routeLabel)
+            key = (routeNo, routeLabel)
+            if key not in next_busses_dict:
+                next_busses_dict[key] = ([], routeLabel)
             
             for trip in route['Trips']['Trip']:
                 if len(trip['GPSSpeed']) > 0:
-                    next_busses_dict[routeNo].append(trip['AdjustedScheduleTime'] + "*")
+                    next_busses_dict[key][0].append(trip['AdjustedScheduleTime'] + "*")
                 else:
-                    next_busses_dict[routeNo].append(trip['AdjustedScheduleTime'])
+                    next_busses_dict[key][0].append(trip['AdjustedScheduleTime'])
 
     else:
-        table = 1
+        print(f"Error: {response.status_code}, {response.text}")
 
-    for route, bus_times in next_busses_dict.items():
-        table.add_row([route, ', '.join(bus_times)])
+    for (routeNo, routeLabel), (bus_times, _) in next_busses_dict.items():
+        table.add_row([routeNo, routeLabel, ', '.join(bus_times)])
 
     return(table.get_string())
