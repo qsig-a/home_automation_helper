@@ -26,4 +26,4 @@ jobs:
         uses: docker/build-push-action@v4
         with:
           push: true
-          tags: qsig/home_automation_helper:$DATE
+          tags: qsig/home_automation_helper:${{ env.DATE }}
