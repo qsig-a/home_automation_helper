@@ -27,4 +27,4 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           push: true
-          tags: qsig/home_automation_helper:${{ steps.sha_short.outputs.sha_short }}
+          tags: qsig/home_automation_helper:${{ steps.vars.outputs.sha_short }}
