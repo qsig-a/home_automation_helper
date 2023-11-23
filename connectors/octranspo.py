@@ -42,15 +42,16 @@ def GetOCTranspoStopInfo(stopNo, output_format):
         result_dict = {}
         for routeLabel, (bus_times, routeNo) in next_busses_dict.items():
             result_dict[routeLabel] = {
+                "RouteLabel": routeLabel,  # Key as "RouteLabel" for route label
                 "RouteNumber": routeNo,
                 "BusTimes": bus_times
             }
         return json.dumps(result_dict, indent=2)
     elif output_format == "table":
         table = PrettyTable()
-        table.field_names = ["Route Label", "Route Number", "Bus Times"]
+        table.field_names = ["Route Number", "Route Label", "Bus Times"]
         for routeLabel, (bus_times, routeNo) in next_busses_dict.items():
-            table.add_row([routeLabel, routeNo, ', '.join(bus_times)])
+            table.add_row([routeNo, routeLabel, ', '.join(bus_times)])
         return table.get_string()
     else:
         return "Invalid output format. Please use 'json' or 'table'."
