@@ -39,14 +39,16 @@ def GetOCTranspoStopInfo(stopNo, output_format):
         return json.dumps(error_message, indent=2) if output_format == "json" else str(error_message)
 
     if output_format == "json":
-        result_dict = {}
+        result_list = []  # Using a list to hold all route dictionaries
         for routeLabel, (bus_times, routeNo) in next_busses_dict.items():
-            result_dict[routeLabel] = {
-                "RouteLabel": routeLabel,  # Key as "RouteLabel" for route label
+            route_dict = {
+                "RouteLabel": routeLabel,
                 "RouteNumber": routeNo,
                 "BusTimes": bus_times
             }
-        return json.dumps(result_dict, indent=2)
+            result_list.append(route_dict)
+        return json.dumps(result_list, indent=2)
+
     elif output_format == "table":
         table = PrettyTable()
         table.field_names = ["Route Number", "Route Label", "Bus Times"]
