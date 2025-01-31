@@ -32,7 +32,7 @@ def boggle4():
             else:
                 return "Wrong size boggle game!",400
 
-@app.route("/sfw_saying",methods=['GET'])
+@app.route("/sfw_quote",methods=['GET'])
 # Get random SFW saying from local DB
 def GetSingleRandomQuoteSFW():
     if os.environ['SAYING_DB_ENABLE'] == "1":
@@ -40,13 +40,13 @@ def GetSingleRandomQuoteSFW():
         if len(data) > 0:
             send = board.SendMessage(data)
             if send == 0:
-                return "Random sfw saying queued"
+                return "Random sfw quote queued"
             else:
                 return "Error getting sfw quote",500
     else:
         return "Sayings DB Not Enabled",405
 
-@app.route("/nsfw_saying",methods=['GET'])
+@app.route("/nsfw_quote",methods=['GET'])
 # Get random NSFW saying from local DB
 def GetSingleRandomQuoteNsfw():
     if os.environ['SAYING_DB_ENABLE'] == "1":
