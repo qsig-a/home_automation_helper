@@ -26,4 +26,4 @@ SAYING_DB_USER
 SAYING_DB_PORT
 
 
-DB Schema is just a table named `sayings` with a column named `quote`.  I also put `source` as a column in case I wanted to display it later.
+DB Schema is just 2 tables named `sfw_quotes` and `nsfw_quotes` with a column named `quote`.  I also put `source` as a column in case I wanted to display it later.

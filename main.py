@@ -32,34 +32,6 @@ def boggle4():
             else:
                 return "Wrong size boggle game!",400
 
-@app.route("/quote",methods=['GET'])
-# Get random quote from local DB
-def GetSingleRandomQuote():
-    if os.environ['SAYING_DB_ENABLE'] == "1":
-        data = say.GetSingleRandQuote()
-        if len(data) > 0:
-            send = board.SendMessage(data)
-            if send == 0:
-                return "Random quote queued"
-            else:
-                return "Error getting quote",500
-    else:
-        return "Sayings DB Not Enabled",405
-
-@app.route("/meme",methods=['GET'])
-#Get random meme from local DB
-def GetSingleRandomMeme():
-    if os.environ['SAYING_DB_ENABLE'] == "1":
-        data = say.GetSingleRandMeme()
-        if len(data) > 0:
-            send = board.SendMessage(data)
-            if send == 0:
-                return "Random meme queued"
-            else:
-                return "Error getting meme",500
-    else:
-        return "Sayings DB Not Enabled",405
-
 @app.route("/sfw_saying",methods=['GET'])
 # Get random SFW saying from local DB
 def GetSingleRandomQuoteSFW():
