@@ -2,7 +2,7 @@ name: ci-release
 
 on:
   push:
-    tags: [ 'v*.*.*' ]
+    tags: [ '**' ]
 jobs:
   docker:
     runs-on: ubuntu-latest
