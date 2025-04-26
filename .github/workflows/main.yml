@@ -15,6 +15,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ssh-key: "${{ secrets.DEPLOY_KEY }}"
 
       - name: Bump version and push tag
         id: tag_version
@@ -22,7 +23,6 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           tag_prefix: "v"
-          initial_version: "0.0.1"
           default_bump: "patch"
 
       - name: Create GitHub Release
@@ -34,5 +34,4 @@ jobs:
           tag_name: ${{ steps.tag_version.outputs.new_tag }}
           release_name: Release ${{ steps.tag_version.outputs.new_tag }}
           body: ${{ steps.tag_version.outputs.changelog }}
-          latest: true
           prerelease: false
