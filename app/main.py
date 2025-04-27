@@ -4,7 +4,8 @@ import asyncio
 import logging
 from typing import AsyncGenerator, List, Dict, Any, Callable # Added more specific types
 
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends, Request
+from contextlib import asynccontextmanager
 
 # Central configuration and settings getter
 from app.config import Settings, get_settings
@@ -32,33 +33,49 @@ log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 
-# --- Dependency for Vestaboard Connector ---
+# --- Lifespan Management for Shared Resources ---
 
-async def get_vestaboard_connector(
-    settings: Settings = Depends(get_settings)
-) -> AsyncGenerator[VestaboardConnector, None]:
-    """
-    FastAPI dependency to create and manage the VestaboardConnector lifecycle.
-    Initializes the connector and ensures its client is closed on teardown.
-    """
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Runs on startup
+    log.info("Application startup: Initializing Vestaboard connector...")
+    settings = get_settings() # Get settings
     connector = None
     try:
         connector = VestaboardConnector(settings)
-        yield connector
-    except VestaboardAuthError as auth_err:
-         # Handle auth errors during initialization (e.g., missing keys)
-         log.critical(f"Vestaboard configuration error: {auth_err}", exc_info=True)
-         raise HTTPException(status_code=500, detail=f"Internal configuration error: {auth_err}")
+        app.state.vestaboard_connector = connector # Store connector in app state
+        log.info("Vestaboard connector initialized and stored in app state.")
+        yield # Application runs here
     finally:
-        if connector:
-            await connector.close()
+        # Runs on shutdown
+        log.info("Application shutdown: Closing Vestaboard connector...")
+        if hasattr(app.state, 'vestaboard_connector') and app.state.vestaboard_connector:
+             await app.state.vestaboard_connector.close()
+             log.info("Vestaboard connector closed.")
+        else:
+             log.warning("Vestaboard connector not found in app state during shutdown.")
+
+
+# --- Dependency for Vestaboard Connector ---
+
+async def get_vestaboard_connector(request: Request) -> VestaboardConnector:
+    """
+    FastAPI dependency that retrieves the shared VestaboardConnector
+    instance created during application startup (via lifespan).
+    """
+    connector = getattr(request.app.state, "vestaboard_connector", None)
+    if connector is None:
+        log.error("Vestaboard connector not found in application state. Lifespan did not run correctly.")
+        # Raise an internal server error if the connector isn't available
+        raise HTTPException(status_code=500, detail="Internal Server Error: Vestaboard connector not initialized")
+    return connector
 
 
 # --- FastAPI Application ---
 app = FastAPI(
     title="Home Automation Helper API",
     description="API for controlling Vestaboard, playing games, and getting sayings.",
-    version="1.1.0"
+    lifespan=lifespan
 )
 
 
@@ -96,7 +113,7 @@ async def _get_and_send_quote(
          else: # General VestaboardError
             raise HTTPException(status_code=502, detail=f"{error_message}: Error communicating with Vestaboard.")
     except HTTPException as http_exc:
-         raise http_exc # Re-raise FastAPI exceptions
+         raise http_exc
     except ConnectionError as conn_err: # Catch DB connection errors specifically
         log.error(f"Database connection error getting quote: {conn_err}", exc_info=True)
         raise HTTPException(status_code=503, detail=f"{error_message}: Database unavailable")
@@ -170,7 +187,6 @@ async def get_sfw_quote(
     connector: VestaboardConnector = Depends(get_vestaboard_connector)
 ) -> Dict[str, str]:
     """Gets a random SFW saying and sends it to the board. (Async)"""
-    # Call the helper function directly and return its result
     return await _get_and_send_quote(
         quote_func=say.GetSingleRandSfwS,
         success_message="Random SFW quote queued",
