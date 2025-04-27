@@ -1,102 +1,187 @@
-import requests, re, os, time
+# app/connectors/vestaboard.py
 
-# Vestaboard Auth
-v_auth = {
-"v_apik" : os.getenv('VESTABOARD_API_KEY'),
-"v_apis" : os.getenv('VESTABOARD_API_SECRET'),
-}
+import httpx
+import re
+import asyncio
+import logging
+from typing import Optional, List, Dict, Any
 
-# Common headers and url for sending to Vestaboard
-headers = {'X-Vestaboard-Api-Key': v_auth.get("v_apik"),
-    'X-Vestaboard-Api-Secret' : v_auth.get("v_apis"),
-    'Content-Type': 'application/json'}
-base_url = "https://platform.vestaboard.com/subscriptions"
+# Import central settings configuration
+from app.config import Settings
 
-# --- Global variable to store the subscription ID ---
-_cached_subscription_id = None
+# Setup logger for this module
+log = logging.getLogger(__name__)
 
-def GetSubscriptionId():
+# --- Custom Exceptions ---
+class VestaboardError(Exception):
+    """Base class for Vestaboard connector errors."""
+    pass
+
+class VestaboardAuthError(VestaboardError):
+    """Error related to authentication (API keys, subscription ID)."""
+    pass
+
+class VestaboardInvalidCharsError(VestaboardError):
+    """Error for invalid characters in a text message."""
+    pass
+
+# --- Connector Class ---
+class VestaboardConnector:
     """
-    Gets the subscription ID, fetching it via API only if not already cached.
-    Returns the subscription ID or None if an error occurs.
+    An asynchronous connector for interacting with the Vestaboard API.
+
+    Manages API credentials, HTTP client session, and subscription ID caching.
     """
-    global _cached_subscription_id # Declare intention to modify the global variable
+    def __init__(self, settings: Settings):
+        """
+        Initializes the connector with settings.
 
-    # Check if already cached
-    if _cached_subscription_id is not None:
-        print("Using cached subscription ID.")
-        return _cached_subscription_id
+        Args:
+            settings: The application's Settings object containing Vestaboard credentials.
 
-    # Not cached, fetch it
-    print("Fetching subscription ID from API...")
-    try:
-        r = requests.get(base_url, headers=headers, timeout=10) # Added timeout
-        r.raise_for_status() # Raises HTTPError for bad responses (4xx or 5xx)
+        Raises:
+            VestaboardAuthError: If API key or secret are missing in settings.
+        """
+        if not settings.vestaboard_api_key or not settings.vestaboard_api_secret:
+            log.error("Vestaboard API Key or Secret not found in settings.")
+            raise VestaboardAuthError("Vestaboard API Key or Secret not configured.")
 
-        content = r.json()
-        # Basic validation of response structure
-        if "subscriptions" in content and isinstance(content["subscriptions"], list) and len(content["subscriptions"]) > 0 and "_id" in content["subscriptions"][0]:
-             v_subid = str(content["subscriptions"][0]["_id"])
-             _cached_subscription_id = v_subid # Cache the result
-             print(f"Successfully fetched and cached subscription ID: {v_subid}")
-             return v_subid
-        else:
-            print("Error: Unexpected response format from API.")
-            return None # Indicate error
+        self._api_key = settings.vestaboard_api_key
+        self._api_secret = settings.vestaboard_api_secret
+        self._base_url = "https://platform.vestaboard.com"
+        self._headers = {
+            'X-Vestaboard-Api-Key': self._api_key,
+            'X-Vestaboard-Api-Secret': self._api_secret,
+            'Content-Type': 'application/json'
+        }
+        # Initialize httpx client (consider making timeout configurable via settings)
+        self._client = httpx.AsyncClient(
+            base_url=self._base_url,
+            headers=self._headers,
+            timeout=20.0 # Increased default timeout
+        )
+        self._subscription_id: Optional[str] = None
+        self._sub_id_lock = asyncio.Lock() # Lock for async cache access/update
+        log.info("VestaboardConnector initialized.")
 
-    except requests.exceptions.RequestException as e:
-        print(f"Error getting subscription ID: {e}")
-        return None # Indicate error
-    except ValueError: # Includes JSONDecodeError
-         print("Error: Could not decode JSON response from API.")
-         return None # Indicate error
-    except KeyError:
-        print("Error: Missing expected keys ('subscriptions' or '_id') in API response.")
-        return None # Indicate error
+    async def close(self):
+        """Closes the underlying httpx client gracefully."""
+        if self._client and not self._client.is_closed:
+            await self._client.aclose()
+            log.info("VestaboardConnector HTTP client closed.")
 
-def SendArray(data):
-    # Sends the message as an array of characters, see https://docs.vestaboard.com/methods for the 6x22 array
+    async def _get_subscription_id(self) -> str:
+        """
+        Gets the Vestaboard subscription ID.
 
-    # Get Subscription ID
-    sub_id = GetSubscriptionId()
+        Fetches via API call only if not already cached. Uses an async lock
+        to prevent race conditions during cache population.
 
-    data = {"characters" : data}
-    msg_url = base_url + "/" + sub_id + "/message"
-    r = requests.post(url=msg_url,headers=headers,json=data)
-    if r.status_code == 200:
-        return 0
-    else:
-        return 1
+        Returns:
+            The subscription ID as a string.
 
-def SendArrayDelay(data):
-    # Sends a message after 200 seconds, used for ending boggle game
+        Raises:
+            VestaboardAuthError: If authentication fails or ID cannot be parsed.
+            VestaboardError: For network issues or other API errors.
+        """
+        # Quick check without lock for performance
+        if self._subscription_id is not None:
+            return self._subscription_id
 
-    # Get Subscription ID
-    sub_id = GetSubscriptionId()
+        # Acquire lock to ensure only one coroutine fetches/updates the cache
+        async with self._sub_id_lock:
+            # Double-check if another coroutine populated the cache while waiting
+            if self._subscription_id is not None:
+                return self._subscription_id
 
-    msg_url = base_url + "/" + sub_id + "/message"
-    time.sleep(200)
-    data = {"characters" : data}
-    r = requests.post(url=msg_url,headers=headers,json=data)
-    if r.status_code == 200:
-        return 0
-    else:
-        return 1
+            log.info("Fetching Vestaboard subscription ID from API...")
+            try:
+                # Make the API call to get subscriptions
+                response = await self._client.get("/subscriptions")
+                response.raise_for_status() # Raises HTTPStatusError for 4xx/5xx
 
-def SendMessage(data):
-    # Used for sending a message directly, checks valid characters
+                content = response.json()
+                # Safely extract the first subscription ID
+                subs = content.get("subscriptions")
+                if isinstance(subs, list) and len(subs) > 0:
+                    sub_id = subs[0].get("_id")
+                    if sub_id:
+                        self._subscription_id = str(sub_id)
+                        log.info(f"Fetched and cached subscription ID: {self._subscription_id}")
+                        return self._subscription_id
 
-    # Get Subscription ID
-    sub_id = GetSubscriptionId()
+                # If extraction failed
+                log.error(f"Could not parse subscription ID from API response: {content}")
+                raise VestaboardAuthError("Could not parse subscription ID from Vestaboard API response.")
 
-    string = str(data)
-    if re.match(r"^[A-Za-z0-9!@$\(\)\-+&=;:\'\"\%,./?° ]*$",string):
-        data = {"text" : data}
-        msg_url = base_url + "/" + sub_id + "/message"
-        r = requests.post(url=msg_url,headers=headers,json=data)
-        if r.status_code == 200:
-            return 0
-        else:
-            return 1
-    else:
-        return 2
+            except httpx.HTTPStatusError as e:
+                 log.error(f"HTTP error getting subscription ID: {e.response.status_code} - {e.response.text}", exc_info=True)
+                 if e.response.status_code in [401, 403]:
+                     raise VestaboardAuthError(f"Authentication failed getting subscription ID (HTTP {e.response.status_code})") from e
+                 else:
+                     raise VestaboardError(f"HTTP error fetching subscription ID: {e.response.status_code}") from e
+            except (httpx.RequestError, ValueError, KeyError, TypeError) as e: # Catch network, JSON, data structure errors
+                log.error(f"Error processing subscription ID response: {e}", exc_info=True)
+                raise VestaboardError(f"Failed to get or process subscription ID: {e}") from e
+
+    async def _post_message(self, sub_id: str, data: Dict[str, Any]):
+        """Helper method to POST data to the Vestaboard message endpoint."""
+        msg_url = f"/subscriptions/{sub_id}/message"
+        try:
+            response = await self._client.post(msg_url, json=data)
+            response.raise_for_status() # Check for HTTP errors
+            log.info(f"Successfully posted message to Vestaboard subscription {sub_id} (Status: {response.status_code})")
+        except httpx.HTTPStatusError as e:
+             log.error(f"HTTP error posting message: {e.response.status_code} - {e.response.text}", exc_info=True)
+             # Check for specific Vestaboard error codes if available in docs/response
+             raise VestaboardError(f"Failed to post message (HTTP {e.response.status_code})") from e
+        except httpx.RequestError as e:
+             log.error(f"Network error posting message: {e}", exc_info=True)
+             raise VestaboardError(f"Network error posting message: {e}") from e
+
+    async def send_array(self, characters: List[List[int]]):
+        """
+        Sends a message formatted as a character array (6x22 grid).
+
+        Args:
+            characters: A list representing the 6x22 character grid.
+
+        Raises:
+            TypeError: If input 'characters' is not a list.
+            VestaboardAuthError: If subscription ID cannot be obtained.
+            VestaboardError: For network or other API errors during posting.
+        """
+        if not isinstance(characters, list):
+             log.warning("Invalid type provided to send_array. Expected list.")
+             raise TypeError("Input 'characters' must be a list.")
+
+        sub_id = await self._get_subscription_id()
+        payload = {"characters": characters}
+        log.debug(f"Sending array message to subscription {sub_id}")
+        await self._post_message(sub_id, payload)
+
+    async def send_message(self, text: str):
+        """
+        Sends a message formatted as text. Validates characters first.
+
+        Args:
+            text: The text string to send.
+
+        Raises:
+            VestaboardInvalidCharsError: If the text contains characters not
+                allowed by Vestaboard (based on internal regex).
+            VestaboardAuthError: If subscription ID cannot be obtained.
+            VestaboardError: For network or other API errors during posting.
+        """
+        string_text = str(text) # Ensure it's a string
+
+        # Vestaboard allowed characters regex (adjust if official docs differ)
+        # Consider pre-compiling: VALID_CHARS_REGEX = re.compile(r"^[A-Za-z0-9!@$\(\)\-+&=;:\'\"\%,./?° ]*$")
+        if not re.match(r"^[A-Za-z0-9!@$\(\)\-+&=;:\'\"\%,./?° ]*$", string_text):
+             log.warning(f"Message contains invalid characters: '{string_text}'")
+             raise VestaboardInvalidCharsError(f"Message contains invalid characters.")
+
+        sub_id = await self._get_subscription_id()
+        payload = {"text": string_text}
+        log.debug(f"Sending text message to subscription {sub_id}: '{string_text}'")
+        await self._post_message(sub_id, payload)

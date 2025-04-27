@@ -1,179 +1,236 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends
-from pydantic_settings import BaseSettings 
-from typing import Optional 
-from app.models import MessageClass, BoggleClass 
+# app/main.py
 
 import asyncio
+import logging
+from typing import AsyncGenerator, List, Dict, Any, Callable # Added more specific types
+
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends
+
+# Central configuration and settings getter
+from app.config import Settings, get_settings
+
+# Models
+from app.models import MessageClass, BoggleClass
+
+# Game logic
 import app.games.boggle as bg
-import app.connectors.vestaboard as board
+
+# Saying logic
 import app.sayings.sayings as say
 
-# --- Configuration Management ---
-class Settings(BaseSettings):
-    saying_db_user: Optional[str] = None
-    saying_db_pass: Optional[str] = None
-    saying_db_host: Optional[str] = None
-    saying_db_port: Optional[str] = None
-    saying_db_name: Optional[str] = None
-    saying_db_enable: str = "0" # Default to disabled
+# Import the async connector and its exceptions
+from app.connectors.vestaboard import (
+    VestaboardConnector,
+    VestaboardError,
+    VestaboardAuthError,
+    VestaboardInvalidCharsError
+)
 
-    # This tells Pydantic to read from environment variables
-    class Config:
-        env_file = '.env' # Optional: load from a .env file
-        extra = 'ignore' # Ignore extra env vars not defined here
+# Setup basic logging
+log = logging.getLogger(__name__)
+# Ensure logging is configured (e.g., in your app startup or main script)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
-# Dependency function to get settings
-def get_settings() -> Settings:
-    # This ensures settings are loaded only once if needed multiple times
-    return Settings()
+
+# --- Dependency for Vestaboard Connector ---
+
+async def get_vestaboard_connector(
+    settings: Settings = Depends(get_settings)
+) -> AsyncGenerator[VestaboardConnector, None]:
+    """
+    FastAPI dependency to create and manage the VestaboardConnector lifecycle.
+    Initializes the connector and ensures its client is closed on teardown.
+    """
+    connector = None
+    try:
+        connector = VestaboardConnector(settings)
+        yield connector
+    except VestaboardAuthError as auth_err:
+         # Handle auth errors during initialization (e.g., missing keys)
+         log.critical(f"Vestaboard configuration error: {auth_err}", exc_info=True)
+         raise HTTPException(status_code=500, detail=f"Internal configuration error: {auth_err}")
+    finally:
+        if connector:
+            await connector.close()
+
 
 # --- FastAPI Application ---
 app = FastAPI(
     title="Home Automation Helper API",
-    description="API for controlling Vestaboard, playing games, and getting sayings."
+    description="API for controlling Vestaboard, playing games, and getting sayings.",
+    version="1.1.0"
 )
+
 
 # --- Helper Functions ---
 
-# Define the background task for ending the Boggle game
-async def schedule_end_boggle(end_grid: list):
-    """
-    Waits for the game duration and then sends the end grid to the board.
-    Uses asyncio.sleep for non-blocking wait within an async function.
-    """
-    await asyncio.sleep(200) # Game duration: 3 minutes and 20 seconds
+async def _get_and_send_quote(
+    quote_func: Callable[[Settings], str | None], # More specific callable signature
+    success_message: str,
+    error_message: str,
+    settings: Settings,
+    connector: VestaboardConnector
+) -> Dict[str, str]:
+    """Async helper function to get a quote and send it via VestaboardConnector."""
     try:
-        # Note: If board.SendArray is a blocking I/O call, it should be run
-        # in a thread pool: await asyncio.to_thread(board.SendArray, end_grid)
-        result = board.SendArray(end_grid) 
-        if result != 0:
-            # Log error or add more robust error handling/reporting here
-            print(f"Error sending Boggle end grid. Result: {result}") 
-            
+        # Run synchronous DB/quote logic in a thread pool to avoid blocking event loop
+        data = await asyncio.to_thread(quote_func, settings=settings)
+
+        if data is None:
+             log.warning(f"{error_message}: Quote function returned None (DB disabled or no quote found).")
+             raise HTTPException(status_code=404, detail=f"{error_message}: Quote not found or DB disabled")
+
+        # Send the message using the async connector
+        await connector.send_message(data)
+
+        log.info(f"Successfully sent quote to board: {success_message}")
+        return {"message": success_message} # Return dict on success
+
+    except (VestaboardInvalidCharsError, VestaboardAuthError, VestaboardError) as vex:
+         # Catch specific Vestaboard errors
+         log.error(f"Vestaboard error sending quote: {vex}", exc_info=True)
+         if isinstance(vex, VestaboardInvalidCharsError):
+             raise HTTPException(status_code=422, detail=f"{error_message}: Invalid characters in quote.")
+         elif isinstance(vex, VestaboardAuthError):
+            raise HTTPException(status_code=503, detail=f"{error_message}: Vestaboard authentication error.")
+         else: # General VestaboardError
+            raise HTTPException(status_code=502, detail=f"{error_message}: Error communicating with Vestaboard.")
+    except HTTPException as http_exc:
+         raise http_exc # Re-raise FastAPI exceptions
+    except ConnectionError as conn_err: # Catch DB connection errors specifically
+        log.error(f"Database connection error getting quote: {conn_err}", exc_info=True)
+        raise HTTPException(status_code=503, detail=f"{error_message}: Database unavailable")
     except Exception as e:
-        # Log exception or add more robust error handling/reporting here
-        print(f"Exception during schedule_end_boggle: {e}") 
-
-def _get_and_send_quote(quote_func: callable, success_message: str, error_message: str, settings: Settings = Depends(get_settings)):
-    """Helper function to get and send a quote, handling DB enable check and board communication."""
-    if settings.saying_db_enable != "1":
-        raise HTTPException(status_code=405, detail="Sayings DB Not Enabled")
-
-    try:
-        data = quote_func()
-        if not data: # Check if data is empty or None
-             raise HTTPException(status_code=500, detail=f"{error_message}: No data received from DB")
-
-        # Assumes board.SendMessage is blocking; FastAPI handles it in a threadpool for sync routes.
-        send_result = board.SendMessage(data)
-
-        if send_result == 0:
-            return {"message": success_message}
-        else:
-            # Log the specific error if possible
-            print(f"Error sending quote to Vestaboard. Result: {send_result}")
-            raise HTTPException(status_code=500, detail=f"{error_message}: Error sending to board")
-
-    except Exception as e:
-        # Log the exception
-        print(f"Error in quote fetching/sending: {e}")
-        raise HTTPException(status_code=500, detail=f"{error_message}: An unexpected error occurred")
+        # Catch any other unexpected errors during the process
+        log.exception(f"Unexpected error in quote process: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"{error_message}: An unexpected internal error occurred")
 
 
 # --- API Endpoints ---
 
-@app.post("/games/boggle", status_code=202) # 202 Accepted is suitable for background tasks
-async def start_boggle_game(item: BoggleClass, background_tasks: BackgroundTasks, settings: Settings = Depends(get_settings)):
+@app.post("/games/boggle", status_code=202) # 202 Accepted for background task
+async def start_boggle_game(
+    item: BoggleClass,
+    background_tasks: BackgroundTasks,
+    connector: VestaboardConnector = Depends(get_vestaboard_connector)
+):
     """
-    Starts a 4x4 or 5x5 Boggle game.
-    Sends the start grid immediately and schedules the end grid display after ~3m20s.
+    Starts a 4x4 or 5x5 Boggle game. Sends start grid, schedules end grid. (Async)
     """
     if item.size not in (4, 5):
         raise HTTPException(status_code=400, detail="Invalid Boggle size. Must be 4 or 5.")
 
     try:
+        # Assuming grid generation is CPU-bound or fast
         start_grid, end_grid = bg.generate_boggle_grids(item.size)
-        if not start_grid or not end_grid: # Basic check if generation failed
+        if not start_grid or not end_grid:
              raise ValueError("Failed to generate Boggle grids.")
 
     except Exception as e:
-        print(f"Error generating Boggle grids: {e}") # Log error
+        log.exception(f"Error generating Boggle grids: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Error creating game grids")
 
+    # Define the background task *inside* the endpoint to capture 'connector' and 'end_grid'
+    async def schedule_end_boggle_display(grid_to_send: List[List[int]], conn: VestaboardConnector):
+        """Background task to wait and send the final Boggle grid."""
+        await asyncio.sleep(200) # Game duration
+        log.info("Boggle timer finished. Sending end grid.")
+        try:
+            await conn.send_array(grid_to_send)
+            log.info("Successfully sent Boggle end grid.")
+        except Exception as bg_task_err:
+            # Log errors from background task - can't easily return HTTP errors here
+            log.error(f"Error sending Boggle end grid in background task: {bg_task_err}", exc_info=True)
+
     try:
-        # Assumes board.SendArray is blocking. If it's async, use 'await'.
-        send_result = board.SendArray(start_grid) 
+        # Send the initial grid using the injected connector
+        await connector.send_array(start_grid)
+        log.info(f"Boggle {item.size}x{item.size} start grid sent.")
 
-        if send_result != 0:
-             # Log error
-             print(f"Error sending Boggle start grid. Result: {send_result}")
-             raise HTTPException(status_code=500, detail="Error sending start grid to board")
-
-        # If sending the start grid was successful, schedule the end grid
-        background_tasks.add_task(schedule_end_boggle, end_grid)
+        # Schedule the background task
+        background_tasks.add_task(schedule_end_boggle_display, end_grid, connector)
         return {"message": f"Boggle {item.size}x{item.size} game queued."}
 
+    except (VestaboardAuthError, VestaboardError) as vex:
+        log.error(f"Vestaboard error sending start grid: {vex}", exc_info=True)
+        status_code = 503 if isinstance(vex, VestaboardAuthError) else 502
+        raise HTTPException(status_code=status_code, detail=f"Vestaboard error initiating game: {vex}")
     except HTTPException as http_exc:
-        raise http_exc # Re-raise HTTP exceptions
+        raise http_exc
     except Exception as e:
-        print(f"Error sending Boggle start grid: {e}") # Log error
+        log.exception(f"Unexpected error sending Boggle start grid: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Error initiating game on board")
 
 
+# --- Quote Endpoints (Async) ---
+
 @app.get("/sfw_quote")
-def get_sfw_quote(quote_data: dict = Depends(lambda: _get_and_send_quote(
-        say.GetSingleRandSfwS,
-        "Random SFW quote queued",
-        "Error getting SFW quote"
-    ))):
-    """Gets a random SFW saying from the local DB and sends it to the board."""
-    return quote_data # Return the result from the helper function
+async def get_sfw_quote(
+    settings: Settings = Depends(get_settings),
+    connector: VestaboardConnector = Depends(get_vestaboard_connector)
+) -> Dict[str, str]:
+    """Gets a random SFW saying and sends it to the board. (Async)"""
+    # Call the helper function directly and return its result
+    return await _get_and_send_quote(
+        quote_func=say.GetSingleRandSfwS,
+        success_message="Random SFW quote queued",
+        error_message="Error getting SFW quote",
+        settings=settings,
+        connector=connector
+    )
 
 @app.get("/nsfw_quote")
-def get_nsfw_quote(quote_data: dict = Depends(lambda: _get_and_send_quote(
-        say.GetSingleRandNsfwS,
-        "Random NSFW quote queued",
-        "Error getting NSFW quote"
-    ))):
-    """Gets a random NSFW saying from the local DB and sends it to the board."""
-    return quote_data # Return the result from the helper function
+async def get_nsfw_quote(
+    settings: Settings = Depends(get_settings),
+    connector: VestaboardConnector = Depends(get_vestaboard_connector)
+) -> Dict[str, str]:
+    """Gets a random NSFW saying and sends it to the board. (Async)"""
+    # Call the helper function directly and return its result
+    return await _get_and_send_quote(
+        quote_func=say.GetSingleRandNsfwS,
+        success_message="Random NSFW quote queued",
+        error_message="Error getting NSFW quote",
+        settings=settings,
+        connector=connector
+    )
 
+
+# --- Message Endpoint (Async) ---
 
 @app.post("/message", status_code=200)
-def post_message(item: MessageClass, settings: Settings = Depends(get_settings)):
-    """Posts a message directly to the Vestaboard."""
-    if not item.message: # Simplified check for None or empty string
+async def post_message(
+    item: MessageClass,
+    connector: VestaboardConnector = Depends(get_vestaboard_connector)
+) -> Dict[str, str]:
+    """Posts a message directly to the Vestaboard. (Async)"""
+    if not item.message:
         raise HTTPException(status_code=400, detail="No message content provided.")
 
     try:
-        # Assumes board.SendMessage is blocking. If it's async, change endpoint to async def and use await.
-        send_result = board.SendMessage(item.message)
+        # Use the async connector method
+        await connector.send_message(item.message)
+        return {"message": "Message sent successfully"}
 
-        if send_result == 0:
-            return {"message": "Message sent successfully"}
-        elif send_result == 1:
-            # Log error if possible
-            print("Error sending message to Vestaboard (Code 1)")
-            raise HTTPException(status_code=500, detail="Error sending message to board")
-        elif send_result == 2:
-            raise HTTPException(
-                status_code=422,
-                detail="Invalid characters in message. See Vestaboard documentation."
-            )
-        else:
-            # Handle unexpected return codes
-            print(f"Unexpected result from board.SendMessage: {send_result}")
-            raise HTTPException(status_code=500, detail="Unknown error sending message")
-
+    except VestaboardInvalidCharsError as vic_err:
+        log.warning(f"Invalid characters in message post: {vic_err}")
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid characters in message. See Vestaboard docs. Error: {vic_err}"
+        )
+    except (VestaboardAuthError, VestaboardError) as vex:
+        log.error(f"Vestaboard error posting message: {vex}", exc_info=True)
+        status_code = 503 if isinstance(vex, VestaboardAuthError) else 502
+        raise HTTPException(status_code=status_code, detail=f"Vestaboard error sending message: {vex}")
     except HTTPException as http_exc:
-        raise http_exc # Re-raise HTTP exceptions
+        raise http_exc
     except Exception as e:
-        # Log the exception
-        print(f"Exception posting message: {e}")
+        log.exception(f"Unexpected error posting message: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="An unexpected error occurred while sending the message")
 
 
+# --- Home Endpoint ---
+
 @app.get("/")
-async def home():
+async def home() -> Dict[str, str]:
     """Basic health check / home endpoint."""
     return {"message": "Hello, World! I am the home automation helper"}
