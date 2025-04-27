@@ -19,8 +19,8 @@ app = FastAPI()
 @app.post("/games/boggle")
 #Boggle 4x4 or 5x5 Game with 3 minute and 20 second timer
 async def boggle4(item: BoggleClass):
-    if item.size in ("4","5"):
-        start,end = bg.Boggle(item.size)    
+    if item.size in (4,5):
+        start,end = bg.generate_boggle_grids(item.size)    
         def endgame(end):
             time.sleep(200)
             board.SendArray(end)

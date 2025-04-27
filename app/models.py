@@ -1,7 +1,7 @@
 from pydantic import BaseModel
 
 class BoggleClass(BaseModel):
-    size: str
+    size: int
 
 class MessageClass(BaseModel):
     message: str
