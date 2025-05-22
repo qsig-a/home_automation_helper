@@ -1,7 +1,12 @@
 # Home automation server
 
 This is a FastAPI application designed for home automation tasks, with a primary focus on integrating with a [Vestaboard](https://www.vestaboard.com/) display.
+This is a FastAPI application designed for home automation tasks, with a primary focus on integrating with a [Vestaboard](https://www.vestaboard.com/) display.
 
+Capabilities include:
+- Posting custom messages to the Vestaboard.
+- Displaying Boggle game grids.
+- Showing random SFW/NSFW quotes from a database.
 Capabilities include:
 - Posting custom messages to the Vestaboard.
 - Displaying Boggle game grids.
