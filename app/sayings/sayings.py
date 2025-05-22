@@ -1,13 +1,14 @@
 
 import mysql.connector
 import logging
+# from typing import Union # Reverted for Python 3.10+
 from app.config import Settings
 
 # Setup basic logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 log = logging.getLogger(__name__)
 
-def _get_db_connection(settings: Settings) -> mysql.connector.MySQLConnection | None:
+def _get_db_connection(settings: Settings) -> mysql.connector.MySQLConnection | None: # Reverted
     """
     Establishes and returns a MySQL database connection using provided settings.
     Returns None if configuration is incomplete or connection fails.
@@ -44,7 +45,7 @@ def _get_db_connection(settings: Settings) -> mysql.connector.MySQLConnection | 
         return None
 
 
-def _get_random_quote_from_db(table_name: str, settings: Settings) -> str | None:
+def _get_random_quote_from_db(table_name: str, settings: Settings) -> str | None: # Reverted
     """
     Connects to the DB using settings, fetches a random quote from the specified table.
     Ensures resources are closed properly. Returns the quote string or None.
@@ -95,7 +96,7 @@ def _get_random_quote_from_db(table_name: str, settings: Settings) -> str | None
 
 # --- Public Functions ---
 
-def GetSingleRandSfwS(settings: Settings) -> str | None:
+def GetSingleRandSfwS(settings: Settings) -> str | None: # Reverted
     """
     Gets a random SFW quote using provided application settings.
     Returns the quote string or None if not found or on error.
@@ -105,7 +106,7 @@ def GetSingleRandSfwS(settings: Settings) -> str | None:
          return None # Or raise an exception if preferred
     return _get_random_quote_from_db("sfw_quotes", settings)
 
-def GetSingleRandNsfwS(settings: Settings) -> str | None:
+def GetSingleRandNsfwS(settings: Settings) -> str | None: # Reverted
     """
     Gets a random NSFW quote using provided application settings.
     Returns the quote string or None if not found or on error.

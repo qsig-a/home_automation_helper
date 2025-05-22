@@ -110,23 +110,32 @@ def generate_boggle_grids(size: int) -> Tuple[List[List[int]], List[List[int]]]:
     # Convert letters to numbers (A=1, B=2, ..., Z=26)
     letter_numbers = [ord(letter.lower()) - ASCII_LOWERCASE_OFFSET for letter in letters]
 
-    # Create a mutable copy to consume numbers as they are placed
-    available_numbers = letter_numbers[:]
-
     # --- Populate the Mid Rows Template ---
     # Use deepcopy to avoid modifying the original template definition
     populated_mid_rows = copy.deepcopy(mid_rows_template)
 
-    for row_index, row in enumerate(populated_mid_rows):
-        for col_index, cell_value in enumerate(row):
+    shuffled_letter_numbers = letter_numbers[:] # Create a mutable copy
+    shuffle(shuffled_letter_numbers)    # Shuffle the letter numbers once
+
+    letter_idx = 0
+    for r_idx, row_template in enumerate(populated_mid_rows): # Iterate with index
+        for c_idx, cell_value in enumerate(row_template):   # Iterate with index
             if cell_value == LETTER_PLACEHOLDER:
-                if not available_numbers:
-                    # Should not happen if template placeholders match dice count
-                    raise RuntimeError("Mismatch between dice count and grid placeholders.")
-                # Take a random number from the available pool (mimics original 'choice')
-                chosen_number = choice(available_numbers)
-                populated_mid_rows[row_index][col_index] = chosen_number
-                available_numbers.remove(chosen_number) # Remove the used number
+                if letter_idx < len(shuffled_letter_numbers):
+                    populated_mid_rows[r_idx][c_idx] = shuffled_letter_numbers[letter_idx]
+                    letter_idx += 1
+                else:
+                    # This error means more placeholders than letters.
+                    raise RuntimeError("Not enough letters to fill all placeholders in the grid template.")
+    
+    # Optional: Check if all letters were used (i.e., if there were more letters than placeholders)
+    if letter_idx != len(shuffled_letter_numbers):
+        # This error means more letters than placeholders.
+        # Depending on desired behavior, this could be an error or just a log warning.
+        # For Boggle, it usually implies a mismatch in dice count vs grid size.
+        # The original code didn't explicitly check for this, as it stopped when placeholders ran out.
+        # Let's keep it strict for now.
+        raise RuntimeError("Mismatch: More letters generated than placeholders available in the grid template.")
 
     # --- Assemble the Start Grid ---
     start_grid: List[List[int]] = []
