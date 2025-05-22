@@ -65,7 +65,8 @@ def test_post_message_invalid_chars_error(client: TestClient, mock_vestaboard_co
     mock_vestaboard_connector.send_message.side_effect = VestaboardInvalidCharsError("Invalid character")
     response = client.post("/message", json={"message": test_message})
     assert response.status_code == 422
-    assert "Invalid characters in message" in response.json()["detail"]
+    # Updated to match handle_vestaboard_call output
+    assert "Error sending message: Invalid characters. Invalid character" in response.json()["detail"]
 
 def test_post_message_auth_error(client: TestClient, mock_vestaboard_connector: AsyncMock):
     """Tests VestaboardAuthError handling."""
@@ -73,7 +74,8 @@ def test_post_message_auth_error(client: TestClient, mock_vestaboard_connector: 
     mock_vestaboard_connector.send_message.side_effect = VestaboardAuthError("Auth failed")
     response = client.post("/message", json={"message": test_message})
     assert response.status_code == 503
-    assert "Vestaboard error sending message: Auth failed" in response.json()["detail"] # Corrected expected detail
+    # Updated to match handle_vestaboard_call output
+    assert "Error sending message: Vestaboard authentication error." in response.json()["detail"]
 
 def test_post_message_general_vestaboard_error(client: TestClient, mock_vestaboard_connector: AsyncMock):
     """Tests general VestaboardError handling."""
@@ -81,7 +83,8 @@ def test_post_message_general_vestaboard_error(client: TestClient, mock_vestaboa
     mock_vestaboard_connector.send_message.side_effect = VestaboardError("API error")
     response = client.post("/message", json={"message": test_message})
     assert response.status_code == 502
-    assert "Vestaboard error sending message: API error" in response.json()["detail"] # Corrected expected detail
+    # Updated to match handle_vestaboard_call output
+    assert "Error sending message: Error communicating with Vestaboard." in response.json()["detail"]
 
 def test_post_message_unexpected_error(client: TestClient, mock_vestaboard_connector: AsyncMock):
     """Tests handling of unexpected errors during message posting."""
@@ -159,7 +162,8 @@ def test_start_boggle_game_vestaboard_auth_error(
 
     response = client.post("/games/boggle", json={"size": 4})
     assert response.status_code == 503
-    assert "Vestaboard error initiating game: Auth failed for Boggle" in response.json()["detail"]
+    # Updated to match handle_vestaboard_call output
+    assert "Vestaboard error initiating Boggle 4x4 game: Vestaboard authentication error." in response.json()["detail"]
 
 @patch("app.main.bg.generate_boggle_grids")
 def test_start_boggle_game_vestaboard_general_error(
@@ -175,7 +179,8 @@ def test_start_boggle_game_vestaboard_general_error(
 
     response = client.post("/games/boggle", json={"size": 5})
     assert response.status_code == 502
-    assert "Vestaboard error initiating game: API error for Boggle" in response.json()["detail"]
+    # Updated to match handle_vestaboard_call output
+    assert "Vestaboard error initiating Boggle 5x5 game: Error communicating with Vestaboard." in response.json()["detail"]
 
 @patch("app.main.bg.generate_boggle_grids")
 @patch("app.main.asyncio.sleep", new_callable=AsyncMock) # Mock sleep
@@ -433,7 +438,11 @@ async def test_get_quote_vestaboard_errors(
 
     response = client.get(endpoint_path)
     assert response.status_code == expected_status
-    assert f"{expected_error_msg_prefix}: {expected_detail_part}" in response.json()["detail"]
+    # Updated to match handle_vestaboard_call output, which includes the original exception message for InvalidCharsError
+    if isinstance(error_to_raise, VestaboardInvalidCharsError):
+        assert f"{expected_error_msg_prefix}: Invalid characters. {error_to_raise}" in response.json()["detail"]
+    else:
+        assert f"{expected_error_msg_prefix}: {expected_detail_part}" in response.json()["detail"]
 
 
 @pytest.mark.parametrize(

@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from typing import AsyncGenerator, List, Dict, Any, Callable # Removed Union
+from typing import AsyncGenerator, List, Dict, Any, Callable, Awaitable, TypeVar # Added Awaitable, TypeVar
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends, Request
 from contextlib import asynccontextmanager
@@ -78,6 +78,26 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# --- Error Handling Helper for Vestaboard Calls ---
+T = TypeVar('T') # Generic type for the return value of the awaitable action
+
+async def handle_vestaboard_call(
+    awaitable_action: Callable[[], Awaitable[T]],
+    error_message_prefix: str
+) -> T:
+    try:
+        return await awaitable_action()
+    except VestaboardInvalidCharsError as vex:
+        log.warning(f"{error_message_prefix}: Invalid characters. Detail: {vex}")
+        raise HTTPException(status_code=422, detail=f"{error_message_prefix}: Invalid characters. {vex}")
+    except VestaboardAuthError as vex:
+        log.error(f"{error_message_prefix}: Authentication error. Detail: {vex}", exc_info=True)
+        raise HTTPException(status_code=503, detail=f"{error_message_prefix}: Vestaboard authentication error.")
+    except VestaboardError as vex: # General VestaboardError
+        log.error(f"{error_message_prefix}: Vestaboard API error. Detail: {vex}", exc_info=True)
+        raise HTTPException(status_code=502, detail=f"{error_message_prefix}: Error communicating with Vestaboard.")
+    # Note: Broader exceptions are not caught here to keep the helper focused on Vestaboard errors.
+    # Calling functions should handle other specific or general exceptions.
 
 # --- Helper Functions ---
 
@@ -97,21 +117,17 @@ async def _get_and_send_quote(
              log.warning(f"{error_message}: Quote function returned None (DB disabled or no quote found).")
              raise HTTPException(status_code=404, detail=f"{error_message}: Quote not found or DB disabled")
 
-        # Send the message using the async connector
-        await connector.send_message(data)
+        # Send the message using the new error handler
+        await handle_vestaboard_call(
+            lambda: connector.send_message(data),
+            error_message # This is the error_message_prefix for Vestaboard call
+        )
 
         log.info(f"Successfully sent quote to board: {success_message}")
-        return {"message": success_message} # Return dict on success
+        return {"message": success_message}
 
-    except (VestaboardInvalidCharsError, VestaboardAuthError, VestaboardError) as vex:
-         # Catch specific Vestaboard errors
-         log.error(f"Vestaboard error sending quote: {vex}", exc_info=True)
-         if isinstance(vex, VestaboardInvalidCharsError):
-             raise HTTPException(status_code=422, detail=f"{error_message}: Invalid characters in quote.")
-         elif isinstance(vex, VestaboardAuthError):
-            raise HTTPException(status_code=503, detail=f"{error_message}: Vestaboard authentication error.")
-         else: # General VestaboardError
-            raise HTTPException(status_code=502, detail=f"{error_message}: Error communicating with Vestaboard.")
+    # Vestaboard specific errors are now handled by handle_vestaboard_call
+    # Keep existing handlers for other types of errors (HTTPException, ConnectionError, general Exception)
     except HTTPException as http_exc:
          raise http_exc
     except ConnectionError as conn_err: # Catch DB connection errors specifically
@@ -153,25 +169,29 @@ async def start_boggle_game(
         await asyncio.sleep(200) # Game duration
         log.info("Boggle timer finished. Sending end grid.")
         try:
+            # Not using handle_vestaboard_call here as it raises HTTPException,
+            # which is not ideal for background tasks that cannot directly return HTTP responses.
+            # The existing try/except Exception is more appropriate for logging in bg tasks.
             await conn.send_array(grid_to_send)
             log.info("Successfully sent Boggle end grid.")
         except Exception as bg_task_err:
-            # Log errors from background task - can't easily return HTTP errors here
+            # Log errors from background task
             log.error(f"Error sending Boggle end grid in background task: {bg_task_err}", exc_info=True)
 
     try:
-        # Send the initial grid using the injected connector
-        await connector.send_array(start_grid)
+        # Send the initial grid using the new error handler
+        await handle_vestaboard_call(
+            lambda: connector.send_array(start_grid),
+            f"Vestaboard error initiating Boggle {item.size}x{item.size} game"
+        )
         log.info(f"Boggle {item.size}x{item.size} start grid sent.")
 
         # Schedule the background task
         background_tasks.add_task(schedule_end_boggle_display, end_grid, connector)
         return {"message": f"Boggle {item.size}x{item.size} game queued."}
 
-    except (VestaboardAuthError, VestaboardError) as vex:
-        log.error(f"Vestaboard error sending start grid: {vex}", exc_info=True)
-        status_code = 503 if isinstance(vex, VestaboardAuthError) else 502
-        raise HTTPException(status_code=status_code, detail=f"Vestaboard error initiating game: {vex}")
+    # Vestaboard specific errors for initial send are now handled by handle_vestaboard_call
+    # Keep existing handlers for other types of errors (HTTPException, general Exception from grid gen etc.)
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
@@ -223,20 +243,15 @@ async def post_message(
         raise HTTPException(status_code=400, detail="No message content provided.")
 
     try:
-        # Use the async connector method
-        await connector.send_message(item.message)
+        # Use the new error handler for the Vestaboard call
+        await handle_vestaboard_call(
+            lambda: connector.send_message(item.message),
+            "Error sending message" # error_message_prefix
+        )
         return {"message": "Message sent successfully"}
 
-    except VestaboardInvalidCharsError as vic_err:
-        log.warning(f"Invalid characters in message post: {vic_err}")
-        raise HTTPException(
-            status_code=422,
-            detail=f"Invalid characters in message. See Vestaboard docs. Error: {vic_err}"
-        )
-    except (VestaboardAuthError, VestaboardError) as vex:
-        log.error(f"Vestaboard error posting message: {vex}", exc_info=True)
-        status_code = 503 if isinstance(vex, VestaboardAuthError) else 502
-        raise HTTPException(status_code=status_code, detail=f"Vestaboard error sending message: {vex}")
+    # Vestaboard specific errors are now handled by handle_vestaboard_call
+    # Keep existing handlers for other types of errors (HTTPException, general Exception)
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:

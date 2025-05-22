@@ -25,6 +25,9 @@ class VestaboardInvalidCharsError(VestaboardError):
     """Error for invalid characters in a text message."""
     pass
 
+# Pre-compiled regex for validating characters in messages
+VALID_CHARS_REGEX = re.compile(r"^[A-Za-z0-9!@$\(\)\-+&=;:'\"\%,./?° ]*$")
+
 # --- Connector Class ---
 class VestaboardConnector:
     """
@@ -175,9 +178,8 @@ class VestaboardConnector:
         """
         string_text = str(text) # Ensure it's a string
 
-        # Vestaboard allowed characters regex (adjust if official docs differ)
-        # Consider pre-compiling: VALID_CHARS_REGEX = re.compile(r"^[A-Za-z0-9!@$\(\)\-+&=;:\'\"\%,./?° ]*$")
-        if not re.match(r"^[A-Za-z0-9!@$\(\)\-+&=;:\'\"\%,./?° ]*$", string_text):
+        # Use the pre-compiled regex for validation
+        if not VALID_CHARS_REGEX.match(string_text):
              log.warning(f"Message contains invalid characters: '{string_text}'")
              raise VestaboardInvalidCharsError(f"Message contains invalid characters.")
 
