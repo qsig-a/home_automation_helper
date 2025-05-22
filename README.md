@@ -197,6 +197,34 @@ You can also run the application using Docker.
     ```
     The application inside the container will be accessible on your host machine at `http://localhost:8000`.
 
+### Running Tests
+
+This project uses `pytest` for unit and integration testing. Test dependencies are included in `requirements.txt`.
+
+1.  **Ensure dependencies are installed:**
+    If you haven't already, install all necessary dependencies including `pytest`:
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+2.  **Run all tests:**
+    Navigate to the root directory of the project and run:
+    ```bash
+    pytest
+    ```
+
+3.  **Run tests with more options:**
+    *   To run tests for a specific file:
+        ```bash
+        pytest tests/test_main.py
+        ```
+    *   To run tests with increased verbosity (shows individual test names):
+        ```bash
+        pytest -v
+        ```
+
+Tests are also automatically executed via GitHub Actions on every push and pull request to the `main` branch, ensuring code quality and integration.
+
 ## Games
 
 This application includes a Boggle game feature that can be displayed on the Vestaboard.
