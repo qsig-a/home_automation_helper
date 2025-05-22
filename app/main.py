@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from typing import AsyncGenerator, List, Dict, Any, Callable, Union # Added Union
+from typing import AsyncGenerator, List, Dict, Any, Callable # Removed Union
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends, Request
 from contextlib import asynccontextmanager
@@ -82,7 +82,7 @@ app = FastAPI(
 # --- Helper Functions ---
 
 async def _get_and_send_quote(
-    quote_func: Callable[[Settings], Union[str, None]], # Changed to Union
+    quote_func: Callable[[Settings], str | None], # Reverted to |
     success_message: str,
     error_message: str,
     settings: Settings,
