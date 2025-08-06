@@ -4,9 +4,15 @@ RUN apt-get update && apt-get install -y \
 vim
 RUN pip install --upgrade pip
 
+# Install Poetry
+RUN pip install poetry
+
+# Copy project files
 ADD app /app
-ADD requirements.txt requirements.txt
+ADD pyproject.toml pyproject.toml
+ADD poetry.lock poetry.lock
 
-RUN pip install --no-cache-dir --upgrade -r requirements.txt
+# Install dependencies
+RUN poetry config virtualenvs.create false && poetry install --no-root --no-dev
 
-CMD [ "fastapi", "run", "./app/main.py", "--port", "80" ]
+CMD [ "poetry", "run", "fastapi", "run", "./app/main.py", "--port", "80" ]
