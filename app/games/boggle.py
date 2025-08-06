@@ -1,8 +1,9 @@
 import copy
 from random import choice, shuffle
-from typing import List, Tuple, Dict, Any, Optional
+from typing import List, Tuple, Dict, Any
 
 # --- Constants ---
+# These constants define the character codes for the Vestaboard.
 LETTER_PLACEHOLDER = 1  # Indicates where a rolled letter should be placed
 BOUNDARY_START = 66     # Initial value for boundary cells in the 'start' grid
 BOUNDARY_END = 63       # Value for boundary cells in the 'end' grid
@@ -31,7 +32,9 @@ BOGGLE_DICE_5x5: List[List[str]] = [
     ["E","T","I","L","I","C"]
 ]
 
-# Templates for 4x4 grid structure
+# --- Vestaboard Grid Templates ---
+# These templates define the structure of the Boggle grid on the Vestaboard.
+# The numbers are character codes specific to the Vestaboard API.
 BEGIN_ROW_4x4: List[int] = [2,0,0,0,0,0,0,0,66,66,66,66,66,66,0,0,0,0,29,48,0,27]
 MID_ROWS_TEMPLATE_4x4: List[List[int]] = [
     [15,20,0,0,0,0,0,0,66, LETTER_PLACEHOLDER, LETTER_PLACEHOLDER, LETTER_PLACEHOLDER, LETTER_PLACEHOLDER, 66,0,0,0,0,30,48,0,27],
@@ -41,7 +44,6 @@ MID_ROWS_TEMPLATE_4x4: List[List[int]] = [
 ]
 END_ROW_4x4: List[int] = [5,0,0,0,0,0,0,0,66,66,66,66,66,66,0,0,0,0,34,48,27,27]
 
-# Templates for 5x5 grid structure (Note: No separate 'begin' row was used in original logic for size 5)
 MID_ROWS_TEMPLATE_5x5: List[List[int]] = [
     [2,0,0,0,0,0,0,66, LETTER_PLACEHOLDER, LETTER_PLACEHOLDER, LETTER_PLACEHOLDER, LETTER_PLACEHOLDER, LETTER_PLACEHOLDER, 66,0,0,0,0,29,48,0,27],
     [15,20,0,0,0,0,0,66, LETTER_PLACEHOLDER, LETTER_PLACEHOLDER, LETTER_PLACEHOLDER, LETTER_PLACEHOLDER, LETTER_PLACEHOLDER, 66,0,0,0,0,30,48,0,27],
@@ -67,92 +69,61 @@ BOGGLE_CONFIG: Dict[int, Dict[str, Any]] = {
     }
 }
 
-# --- Refactored Function ---
+def _roll_dice_and_get_letters(dice_set: List[List[str]]) -> List[int]:
+    """Rolls the dice and returns a list of letter numbers."""
+    shuffled_dice = dice_set[:]
+    shuffle(shuffled_dice)
+    letters = [choice(die) for die in shuffled_dice]
+    return [ord(letter.lower()) - ASCII_LOWERCASE_OFFSET for letter in letters]
+
+def _populate_grid(template: List[List[int]], letters: List[int]) -> List[List[int]]:
+    """Populates a grid template with letters."""
+    populated_grid = copy.deepcopy(template)
+    shuffled_letters = letters[:]
+    shuffle(shuffled_letters)
+
+    letter_idx = 0
+    for r_idx, row in enumerate(populated_grid):
+        for c_idx, cell in enumerate(row):
+            if cell == LETTER_PLACEHOLDER:
+                if letter_idx < len(shuffled_letters):
+                    populated_grid[r_idx][c_idx] = shuffled_letters[letter_idx]
+                    letter_idx += 1
+                else:
+                    raise RuntimeError("Not enough letters for placeholders.")
+    
+    if letter_idx != len(shuffled_letters):
+        raise RuntimeError("More letters than placeholders.")
+
+    return populated_grid
+
+def _create_end_grid(start_grid: List[List[int]]) -> List[List[int]]:
+    """Creates the end grid by modifying boundary markers."""
+    end_grid = copy.deepcopy(start_grid)
+    for row in end_grid:
+        for i, cell in enumerate(row):
+            if cell == BOUNDARY_START:
+                row[i] = BOUNDARY_END
+    return end_grid
+
 def generate_boggle_grids(size: int) -> Tuple[List[List[int]], List[List[int]]]:
     """
     Generates 'start' and 'end' grid representations for a Boggle game.
-
-    The function selects the appropriate dice set and grid template based on the
-    specified size (4 for 4x4, 5 for 5x5). It "rolls" the dice, converts
-    letters to numbers (A=1, B=2,...), and populates the grid template.
-    Two grids are returned:
-    - 'start_grid': Contains the rolled letter numbers and initial boundary markers.
-    - 'end_grid': A copy of the start grid where boundary markers are modified.
-
-    Args:
-        size: The dimension of the Boggle board (must be 4 or 5).
-
-    Returns:
-        A tuple containing two grids (lists of lists of integers):
-        (start_grid, end_grid)
-
-    Raises:
-        ValueError: If the provided size is not supported (not in BOGGLE_CONFIG).
-        RuntimeError: If there aren't enough letters generated to fill placeholders.
     """
     if size not in BOGGLE_CONFIG:
-        raise ValueError(f"Unsupported Boggle size: {size}. Supported sizes are {list(BOGGLE_CONFIG.keys())}")
+        raise ValueError(f"Unsupported Boggle size: {size}.")
 
     config = BOGGLE_CONFIG[size]
-    dice_set = config["dice"]
-    begin_row_template = config["begin_row"]
-    mid_rows_template = config["mid_rows"]
-    end_row_template = config["end_row"]
+    letter_numbers = _roll_dice_and_get_letters(config["dice"])
+    populated_mid_rows = _populate_grid(config["mid_rows"], letter_numbers)
 
-    # --- Roll the Dice ---
-    # Create a copy to shuffle without modifying the original constant list
-    shuffled_dice = dice_set[:]
-    shuffle(shuffled_dice)
-
-    # Roll one letter from each die
-    letters = [choice(die) for die in shuffled_dice]
-
-    # Convert letters to numbers (A=1, B=2, ..., Z=26)
-    letter_numbers = [ord(letter.lower()) - ASCII_LOWERCASE_OFFSET for letter in letters]
-
-    # --- Populate the Mid Rows Template ---
-    # Use deepcopy to avoid modifying the original template definition
-    populated_mid_rows = copy.deepcopy(mid_rows_template)
-
-    shuffled_letter_numbers = letter_numbers[:] # Create a mutable copy
-    shuffle(shuffled_letter_numbers)    # Shuffle the letter numbers once
-
-    letter_idx = 0
-    for r_idx, row_template in enumerate(populated_mid_rows): # Iterate with index
-        for c_idx, cell_value in enumerate(row_template):   # Iterate with index
-            if cell_value == LETTER_PLACEHOLDER:
-                if letter_idx < len(shuffled_letter_numbers):
-                    populated_mid_rows[r_idx][c_idx] = shuffled_letter_numbers[letter_idx]
-                    letter_idx += 1
-                else:
-                    # This error means more placeholders than letters.
-                    raise RuntimeError("Not enough letters to fill all placeholders in the grid template.")
-    
-    # Optional: Check if all letters were used (i.e., if there were more letters than placeholders)
-    if letter_idx != len(shuffled_letter_numbers):
-        # This error means more letters than placeholders.
-        # Depending on desired behavior, this could be an error or just a log warning.
-        # For Boggle, it usually implies a mismatch in dice count vs grid size.
-        # The original code didn't explicitly check for this, as it stopped when placeholders ran out.
-        # Let's keep it strict for now.
-        raise RuntimeError("Mismatch: More letters generated than placeholders available in the grid template.")
-
-    # --- Assemble the Start Grid ---
     start_grid: List[List[int]] = []
-    # Add the begin row only if it's defined for this size (i.e., size 4)
-    if begin_row_template:
-        start_grid.append(copy.deepcopy(begin_row_template)) # Use deepcopy for safety
+    if config["begin_row"]:
+        start_grid.append(copy.deepcopy(config["begin_row"]))
 
-    start_grid.extend(populated_mid_rows) # Add the populated middle rows
-    start_grid.append(copy.deepcopy(end_row_template)) # Add the end row (use deepcopy)
+    start_grid.extend(populated_mid_rows)
+    start_grid.append(copy.deepcopy(config["end_row"]))
 
-    # --- Create the End Grid ---
-    # Start with a deep copy of the start_grid
-    end_grid = copy.deepcopy(start_grid)
-    # Modify the boundary markers in the end_grid
-    for row in end_grid:
-        for col_index, cell_value in enumerate(row):
-            if cell_value == BOUNDARY_START:
-                row[col_index] = BOUNDARY_END
+    end_grid = _create_end_grid(start_grid)
 
     return start_grid, end_grid

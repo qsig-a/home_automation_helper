@@ -92,7 +92,7 @@ def test_post_message_unexpected_error(client: TestClient, mock_vestaboard_conne
     mock_vestaboard_connector.send_message.side_effect = Exception("Something broke")
     response = client.post("/message", json={"message": test_message})
     assert response.status_code == 500
-    assert "An unexpected error occurred while sending the message" in response.json()["detail"]
+    assert "Error sending message: An unexpected internal error occurred." in response.json()["detail"]
 
 
 # --- Tests for POST /games/boggle endpoint ---
@@ -479,14 +479,13 @@ async def test_get_quote_db_connection_error(
 @pytest.mark.parametrize(
     "endpoint_path, mock_say_func_path, expected_error_msg_prefix",
     [
-        ("/sfw_quote", "app.main.say.GetSingleRandSfwS", "Error getting SFW quote"),
-        ("/nsfw_quote", "app.main.say.GetSingleRandNsfwS", "Error getting NSFW quote"),
+        ("/sfw_quote", "app.sayings.GetSingleRandSfwS", "Error getting SFW quote"),
+        ("/nsfw_quote", "app.sayings.GetSingleRandNsfwS", "Error getting NSFW quote"),
     ]
 )
-@patch("app.main.asyncio.to_thread", new_callable=AsyncMock)
-@pytest.mark.asyncio # Added decorator
-async def test_get_quote_unexpected_error(
-    mock_to_thread: AsyncMock,
+@patch("app.main.asyncio.to_thread")
+def test_get_quote_unexpected_error(
+    mock_to_thread: MagicMock,
     endpoint_path: str,
     mock_say_func_path: str,
     expected_error_msg_prefix: str,
@@ -495,12 +494,7 @@ async def test_get_quote_unexpected_error(
 ):
     """Tests unexpected errors during quote retrieval."""
     mock_settings.saying_db_enable = "1"
-
-    async def side_effect_for_to_thread(func, *args, **kwargs):
-        if func.__name__ == mock_say_func_path.split('.')[-1]:
-            raise Exception("Totally unexpected") # Simulate unexpected error
-        return await asyncio.to_thread. वास्तविक_call(func, *args, **kwargs)
-    mock_to_thread.side_effect = side_effect_for_to_thread
+    mock_to_thread.side_effect = Exception("Totally unexpected")
 
     response = client.get(endpoint_path)
     assert response.status_code == 500
