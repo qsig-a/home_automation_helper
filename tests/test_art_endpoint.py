@@ -21,7 +21,7 @@ async def test_get_art_success(
 
     assert response.status_code == 200
     assert response.json() == {"message": "Random art queued"}
-    mock_vestaboard_connector.send_array.assert_called_once_with(test_art)
+    mock_vestaboard_connector.send_array.assert_called_once_with(test_art, source='rw')
 
 @patch("app.main.asyncio.to_thread", new_callable=AsyncMock)
 @pytest.mark.asyncio

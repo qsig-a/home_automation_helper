@@ -11,8 +11,11 @@ Capabilities include:
 
 The following environment variables can be set to configure the application:
 
-- `VESTABOARD_API_KEY`: Your Vestaboard API Key. Obtain this by creating an Installable API Key from the Vestaboard web interface.
-- `VESTABOARD_API_SECRET`: Your Vestaboard API Secret. Obtain this alongside the API Key.
+- `VESTABOARD_RW_API_KEY`: Your Vestaboard Read/Write API Key. Obtain this from the Vestaboard web interface.
+- `VESTABOARD_LOCAL_API_KEY`: Your Vestaboard Local API Key.
+- `VESTABOARD_LOCAL_API_IP`: The IP address of your Vestaboard for Local API usage.
+- `VESTABOARD_API_KEY`: (Deprecated) Your Vestaboard API Key (Platform API).
+- `VESTABOARD_API_SECRET`: (Deprecated) Your Vestaboard API Secret (Platform API).
 - `SAYING_DB_ENABLE`: Controls whether the saying database functionality is enabled. Set to "1" to enable, "0" to disable. (Default: `"0"`)
 - `SAYING_DB_USER`: The username for connecting to the sayings database.
 - `SAYING_DB_PASS`: The password for the database user.
@@ -112,6 +115,33 @@ This section details the available API endpoints.
 -   **Example Usage:**
     ```bash
     curl http://localhost:8000/nsfw_quote
+    ```
+
+### Local API Support
+
+The application supports sending messages via the Vestaboard Local API. You can trigger this by using the `/local` suffix on supported endpoints or setting `source='local'` where applicable.
+
+#### `POST /message/local`
+-   **Description:** Posts a message using the Local API. Supports transitions.
+-   **Request Body:** `MessageClass` with optional transition parameters.
+    ```json
+    {
+        "message": "Hello Local",
+        "strategy": "column",
+        "step_interval_ms": 3000,
+        "step_size": 2
+    }
+    ```
+
+#### `GET /sfw_quote/local`, `GET /nsfw_quote/local`, `GET /art/local`
+-   **Description:** Retrieves content and sends it via Local API.
+-   **Query Parameters:**
+    -   `strategy` (optional): Transition strategy (e.g., "column").
+    -   `step_interval_ms` (optional): Interval in ms.
+    -   `step_size` (optional): Step size.
+-   **Example Usage:**
+    ```bash
+    curl "http://localhost:8000/sfw_quote/local?strategy=column&step_size=2"
     ```
 
 ## Setup and Running
