@@ -4,7 +4,7 @@ import httpx
 import re
 import asyncio
 import logging
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Union
 
 # Import central settings configuration
 from app.config import Settings
@@ -18,7 +18,7 @@ class VestaboardError(Exception):
     pass
 
 class VestaboardAuthError(VestaboardError):
-    """Error related to authentication (API keys, subscription ID)."""
+    """Error related to authentication (API keys)."""
     pass
 
 class VestaboardInvalidCharsError(VestaboardError):
@@ -26,164 +26,185 @@ class VestaboardInvalidCharsError(VestaboardError):
     pass
 
 # Pre-compiled regex for validating characters in messages
-VALID_CHARS_REGEX = re.compile(r"^[A-Za-z0-9!@$\(\)\-+&=;:'\"\%,./?° ]*$")
+VALID_CHARS_REGEX = re.compile(r"^[A-Za-z0-9!@$\(\)\-+&=;:'\"\%,./?° \n]*$")
 
-# --- Connector Class ---
+# Character mapping for Vestaboard
+CHAR_CODE_MAP = {
+    ' ': 0,
+    'A': 1, 'B': 2, 'C': 3, 'D': 4, 'E': 5, 'F': 6, 'G': 7, 'H': 8, 'I': 9, 'J': 10,
+    'K': 11, 'L': 12, 'M': 13, 'N': 14, 'O': 15, 'P': 16, 'Q': 17, 'R': 18, 'S': 19, 'T': 20,
+    'U': 21, 'V': 22, 'W': 23, 'X': 24, 'Y': 25, 'Z': 26,
+    'a': 1, 'b': 2, 'c': 3, 'd': 4, 'e': 5, 'f': 6, 'g': 7, 'h': 8, 'i': 9, 'j': 10,
+    'k': 11, 'l': 12, 'm': 13, 'n': 14, 'o': 15, 'p': 16, 'q': 17, 'r': 18, 's': 19, 't': 20,
+    'u': 21, 'v': 22, 'w': 23, 'x': 24, 'y': 25, 'z': 26,
+    '1': 27, '2': 28, '3': 29, '4': 30, '5': 31, '6': 32, '7': 33, '8': 34, '9': 35, '0': 36,
+    '!': 37, '@': 38, '#': 39, '$': 40, '(': 41, ')': 42, '-': 44, '+': 46, '&': 47, '=': 48,
+    ';': 49, ':': 50, "'": 52, '"': 53, '%': 54, ',': 55, '.': 56, '/': 59, '?': 60, '°': 62
+}
+
 class VestaboardConnector:
     """
     An asynchronous connector for interacting with the Vestaboard API.
-
-    Manages API credentials, HTTP client session, and subscription ID caching.
+    Supports both Read/Write (RW) API and Local API.
     """
     def __init__(self, settings: Settings):
-        """
-        Initializes the connector with settings.
+        self._settings = settings
+        self._rw_api_key = settings.vestaboard_rw_api_key
+        self._local_api_key = settings.vestaboard_local_api_key
+        self._local_api_ip = settings.vestaboard_local_api_ip
 
-        Args:
-            settings: The application's Settings object containing Vestaboard credentials.
-
-        Raises:
-            VestaboardAuthError: If API key or secret are missing in settings.
-        """
-        if not settings.vestaboard_api_key or not settings.vestaboard_api_secret:
-            log.error("Vestaboard API Key or Secret not found in settings.")
-            raise VestaboardAuthError("Vestaboard API Key or Secret not configured.")
-
-        self._api_key = settings.vestaboard_api_key
-        self._api_secret = settings.vestaboard_api_secret
-        self._base_url = "https://platform.vestaboard.com"
-        self._headers = {
-            'X-Vestaboard-Api-Key': self._api_key,
-            'X-Vestaboard-Api-Secret': self._api_secret,
+        # RW API Client
+        self._rw_base_url = "https://rw.vestaboard.com"
+        self._rw_headers = {
+            'X-Vestaboard-Read-Write-Key': self._rw_api_key or "",
             'Content-Type': 'application/json'
         }
-        # Initialize httpx client (consider making timeout configurable via settings)
-        self._client = httpx.AsyncClient(
-            base_url=self._base_url,
-            headers=self._headers,
-            timeout=20.0 # Increased default timeout
+        self._rw_client = httpx.AsyncClient(
+            base_url=self._rw_base_url,
+            headers=self._rw_headers,
+            timeout=20.0
         )
-        self._subscription_id: Optional[str] = None
-        self._sub_id_lock = asyncio.Lock() # Lock for async cache access/update
+
+        # Local API Client (initialized only if IP provided)
+        self._local_client = None
+        if self._local_api_ip:
+            self._local_base_url = f"http://{self._local_api_ip}:7000"
+            self._local_headers = {
+                'X-Vestaboard-Local-Api-Key': self._local_api_key or "",
+                'Content-Type': 'application/json'
+            }
+            self._local_client = httpx.AsyncClient(
+                base_url=self._local_base_url,
+                headers=self._local_headers,
+                timeout=20.0
+            )
+
         log.info("VestaboardConnector initialized.")
 
     async def close(self):
-        """Closes the underlying httpx client gracefully."""
-        if self._client and not self._client.is_closed:
-            await self._client.aclose()
-            log.info("VestaboardConnector HTTP client closed.")
+        """Closes the underlying httpx clients."""
+        if self._rw_client and not self._rw_client.is_closed:
+            await self._rw_client.aclose()
+        if self._local_client and not self._local_client.is_closed:
+            await self._local_client.aclose()
+        log.info("VestaboardConnector HTTP clients closed.")
 
-    async def _get_subscription_id(self) -> str:
+    def convert_text_to_array(self, text: str) -> List[List[int]]:
         """
-        Gets the Vestaboard subscription ID.
-
-        Fetches via API call only if not already cached. Uses an async lock
-        to prevent race conditions during cache population.
-
-        Returns:
-            The subscription ID as a string.
-
-        Raises:
-            VestaboardAuthError: If authentication fails or ID cannot be parsed.
-            VestaboardError: For network issues or other API errors.
+        Converts a text string into a 6x22 integer array for Vestaboard.
         """
-        # Quick check without lock for performance
-        if self._subscription_id is not None:
-            return self._subscription_id
+        rows = 6
+        cols = 22
+        board = [[0] * cols for _ in range(rows)]
 
-        # Acquire lock to ensure only one coroutine fetches/updates the cache
-        async with self._sub_id_lock:
-            # Double-check if another coroutine populated the cache while waiting
-            if self._subscription_id is not None:
-                return self._subscription_id
+        row = 0
+        col = 0
 
-            log.info("Fetching Vestaboard subscription ID from API...")
-            try:
-                # Make the API call to get subscriptions
-                response = await self._client.get("/subscriptions")
-                response.raise_for_status() # Raises HTTPStatusError for 4xx/5xx
+        for char in text:
+            if row >= rows:
+                break
 
-                content = response.json()
-                # Safely extract the first subscription ID
-                subs = content.get("subscriptions")
-                if isinstance(subs, list) and len(subs) > 0:
-                    sub_id = subs[0].get("_id")
-                    if sub_id:
-                        self._subscription_id = str(sub_id)
-                        log.info(f"Fetched and cached subscription ID: {self._subscription_id}")
-                        return self._subscription_id
+            if char == '\n':
+                row += 1
+                col = 0
+                continue
 
-                # If extraction failed
-                log.error(f"Could not parse subscription ID from API response: {content}")
-                raise VestaboardAuthError("Could not parse subscription ID from Vestaboard API response.")
+            code = CHAR_CODE_MAP.get(char, 0) # Default to blank (0) if unknown
 
-            except httpx.HTTPStatusError as e:
-                 log.error(f"HTTP error getting subscription ID: {e.response.status_code} - {e.response.text}", exc_info=True)
-                 if e.response.status_code in [401, 403]:
-                     raise VestaboardAuthError(f"Authentication failed getting subscription ID (HTTP {e.response.status_code})") from e
-                 else:
-                     raise VestaboardError(f"HTTP error fetching subscription ID: {e.response.status_code}") from e
-            except (httpx.RequestError, ValueError, KeyError, TypeError) as e: # Catch network, JSON, data structure errors
-                log.error(f"Error processing subscription ID response: {e}", exc_info=True)
-                raise VestaboardError(f"Failed to get or process subscription ID: {e}") from e
+            board[row][col] = code
+            col += 1
 
-    async def _post_message(self, sub_id: str, data: Dict[str, Any]):
-        """Helper method to POST data to the Vestaboard message endpoint."""
-        msg_url = f"/subscriptions/{sub_id}/message"
+            if col >= cols:
+                col = 0
+                row += 1
+
+        return board
+
+    async def _post_rw(self, data: Union[Dict[str, Any], List[List[int]]]):
+        """Helper to POST to RW API."""
+        if not self._rw_api_key:
+             log.error("RW API Key not configured.")
+             raise VestaboardAuthError("RW API Key not configured.")
+
         try:
-            response = await self._client.post(msg_url, json=data)
-            response.raise_for_status() # Check for HTTP errors
-            log.info(f"Successfully posted message to Vestaboard subscription {sub_id} (Status: {response.status_code})")
+            # Re-apply header in case key was updated or just to be safe
+            headers = self._rw_headers.copy()
+            headers['X-Vestaboard-Read-Write-Key'] = self._rw_api_key
+
+            response = await self._rw_client.post("/", json=data, headers=headers)
+            response.raise_for_status()
+            log.info("Successfully sent message via RW API.")
         except httpx.HTTPStatusError as e:
-             log.error(f"HTTP error posting message: {e.response.status_code} - {e.response.text}", exc_info=True)
-             # Check for specific Vestaboard error codes if available in docs/response
-             raise VestaboardError(f"Failed to post message (HTTP {e.response.status_code})") from e
+            log.error(f"RW API HTTP error: {e.response.status_code} - {e.response.text}")
+            raise VestaboardError(f"RW API error: {e.response.status_code}") from e
         except httpx.RequestError as e:
-             log.error(f"Network error posting message: {e}", exc_info=True)
-             raise VestaboardError(f"Network error posting message: {e}") from e
+            log.error(f"RW API network error: {e}")
+            raise VestaboardError(f"RW API network error: {e}") from e
 
-    async def send_array(self, characters: List[List[int]]):
+    async def _post_local(self, data: Union[Dict[str, Any], List[List[int]]]):
+        """Helper to POST to Local API."""
+        if not self._local_client or not self._local_api_key:
+             log.error("Local API not configured (Key or IP missing).")
+             raise VestaboardAuthError("Local API not configured (Key or IP missing).")
+
+        try:
+             # Re-apply header
+            headers = self._local_headers.copy()
+            headers['X-Vestaboard-Local-Api-Key'] = self._local_api_key
+
+            response = await self._local_client.post("/local-api/message", json=data, headers=headers)
+            response.raise_for_status()
+            log.info("Successfully sent message via Local API.")
+        except httpx.HTTPStatusError as e:
+            log.error(f"Local API HTTP error: {e.response.status_code} - {e.response.text}")
+            raise VestaboardError(f"Local API error: {e.response.status_code}") from e
+        except httpx.RequestError as e:
+            log.error(f"Local API network error: {e}")
+            raise VestaboardError(f"Local API network error: {e}") from e
+
+    async def send_message(self, text: str, source: str = 'rw', **kwargs):
         """
-        Sends a message formatted as a character array (6x22 grid).
-
-        Args:
-            characters: A list representing the 6x22 character grid.
-
-        Raises:
-            TypeError: If input 'characters' is not a list.
-            VestaboardAuthError: If subscription ID cannot be obtained.
-            VestaboardError: For network or other API errors during posting.
+        Sends a text message.
         """
-        if not isinstance(characters, list):
-             log.warning("Invalid type provided to send_array. Expected list.")
-             raise TypeError("Input 'characters' must be a list.")
-
-        sub_id = await self._get_subscription_id()
-        payload = {"characters": characters}
-        log.debug(f"Sending array message to subscription {sub_id}")
-        await self._post_message(sub_id, payload)
-
-    async def send_message(self, text: str):
-        """
-        Sends a message formatted as text. Validates characters first.
-
-        Args:
-            text: The text string to send.
-
-        Raises:
-            VestaboardInvalidCharsError: If the text contains characters not
-                allowed by Vestaboard (based on internal regex).
-            VestaboardAuthError: If subscription ID cannot be obtained.
-            VestaboardError: For network or other API errors during posting.
-        """
-        string_text = str(text) # Ensure it's a string
-
-        # Use the pre-compiled regex for validation
+        string_text = str(text)
         if not VALID_CHARS_REGEX.match(string_text):
              log.warning(f"Message contains invalid characters: '{string_text}'")
              raise VestaboardInvalidCharsError(f"Message contains invalid characters.")
 
-        sub_id = await self._get_subscription_id()
-        payload = {"text": string_text}
-        log.debug(f"Sending text message to subscription {sub_id}: '{string_text}'")
-        await self._post_message(sub_id, payload)
+        if source == 'local':
+            # Local API only accepts arrays
+            array_data = self.convert_text_to_array(string_text)
+            await self.send_array(array_data, source='local', **kwargs)
+        else:
+            # RW API
+            payload = {"text": string_text}
+            await self._post_rw(payload)
+
+    async def send_array(self, characters: List[List[int]], source: str = 'rw', **kwargs):
+        """
+        Sends a character array.
+        """
+        if not isinstance(characters, list):
+             raise TypeError("Input 'characters' must be a list.")
+
+        if source == 'local':
+            # Local API supports transitions
+
+            # Check if any transition params are present
+            transition_keys = ['strategy', 'step_interval_ms', 'step_size']
+            has_options = any(k in kwargs and kwargs[k] is not None for k in transition_keys)
+
+            if has_options:
+                payload = {"characters": characters}
+                if kwargs.get('strategy'):
+                    payload['strategy'] = kwargs['strategy']
+                if kwargs.get('step_interval_ms') is not None:
+                    payload['step_interval_ms'] = kwargs['step_interval_ms']
+                if kwargs.get('step_size') is not None:
+                    payload['step_size'] = kwargs['step_size']
+                await self._post_local(payload)
+            else:
+                await self._post_local(characters) # Send raw list
+        else:
+            # RW API
+            await self._post_rw(characters)

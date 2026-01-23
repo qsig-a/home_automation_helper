@@ -41,7 +41,7 @@ def test_post_message_success(client: TestClient, mock_vestaboard_connector: Asy
     response = client.post("/message", json={"message": test_message})
     assert response.status_code == 200
     assert response.json() == {"message": "Message sent successfully"}
-    mock_vestaboard_connector.send_message.assert_called_once_with(test_message)
+    mock_vestaboard_connector.send_message.assert_called_once_with(test_message, source='rw')
 
 def test_post_message_empty_payload(client: TestClient):
     """Tests posting an empty message."""
@@ -118,7 +118,7 @@ async def test_start_boggle_game_success(
     assert response.json() == {"message": f"Boggle {size}x{size} game queued."}
     
     mock_generate_grids.assert_called_once_with(size)
-    mock_vestaboard_connector.send_array.assert_any_call(start_grid_data) # First call is start_grid
+    mock_vestaboard_connector.send_array.assert_any_call(start_grid_data, source='rw') # First call is start_grid
     
     # Check that the background task was scheduled and would eventually send the end_grid
     # We can't easily test the timing or actual execution of the background task here
@@ -329,7 +329,7 @@ async def test_get_quote_success(
                 break
     assert called_with_correct_func, f"asyncio.to_thread not called correctly with {mock_say_func_path}"
 
-    mock_vestaboard_connector.send_message.assert_called_once_with(test_quote)
+    mock_vestaboard_connector.send_message.assert_called_once_with(test_quote, source='rw')
 
 
 @pytest.mark.parametrize(

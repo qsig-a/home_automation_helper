@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from typing import List, Dict, Any, Callable, Awaitable, TypeVar
+from typing import List, Dict, Any, Callable, Awaitable, TypeVar, Optional
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends, Request
 from contextlib import asynccontextmanager
@@ -78,7 +78,9 @@ async def get_and_send_quote(
     success_message: str,
     error_message: str,
     settings: Settings,
-    connector: VestaboardConnector
+    connector: VestaboardConnector,
+    source: str = 'rw',
+    **kwargs
 ) -> Dict[str, str]:
     try:
         data = await asyncio.to_thread(quote_func, settings=settings)
@@ -87,7 +89,7 @@ async def get_and_send_quote(
             raise HTTPException(status_code=404, detail=f"{error_message}: Quote not found or DB disabled")
 
         await handle_vestaboard_action(
-            lambda: connector.send_message(data),
+            lambda: connector.send_message(data, source=source, **kwargs),
             error_message
         )
         log.info(f"Successfully sent quote to board: {success_message}")
@@ -106,7 +108,9 @@ async def get_and_send_art(
     success_message: str,
     error_message: str,
     settings: Settings,
-    connector: VestaboardConnector
+    connector: VestaboardConnector,
+    source: str = 'rw',
+    **kwargs
 ) -> Dict[str, str]:
     try:
         data = await asyncio.to_thread(art_func, settings=settings)
@@ -115,7 +119,7 @@ async def get_and_send_art(
             raise HTTPException(status_code=404, detail=f"{error_message}: Art not found or DB disabled")
 
         await handle_vestaboard_action(
-            lambda: connector.send_array(data),
+            lambda: connector.send_array(data, source=source, **kwargs),
             error_message
         )
         log.info(f"Successfully sent art to board: {success_message}")
@@ -149,13 +153,13 @@ async def start_boggle_game(
         await asyncio.sleep(200)
         log.info("Boggle timer finished. Sending end grid.")
         try:
-            await conn.send_array(grid)
+            await conn.send_array(grid, source='rw')
             log.info("Successfully sent Boggle end grid.")
         except Exception as e:
             log.error(f"Error sending Boggle end grid in background task: {e}", exc_info=True)
 
     await handle_vestaboard_action(
-        lambda: connector.send_array(start_grid),
+        lambda: connector.send_array(start_grid, source='rw'),
         f"Vestaboard error initiating Boggle {item.size}x{item.size} game"
     )
 
@@ -173,7 +177,28 @@ async def get_sfw_quote(
         success_message="Random SFW quote queued",
         error_message="Error getting SFW quote",
         settings=settings,
-        connector=connector
+        connector=connector,
+        source='rw'
+    )
+
+@app.get("/sfw_quote/local")
+async def get_sfw_quote_local(
+    strategy: Optional[str] = None,
+    step_interval_ms: Optional[int] = None,
+    step_size: Optional[int] = None,
+    settings: Settings = Depends(get_settings),
+    connector: VestaboardConnector = Depends(get_vestaboard_connector)
+) -> Dict[str, str]:
+    return await get_and_send_quote(
+        quote_func=say.GetSingleRandSfwS,
+        success_message="Random SFW quote queued (Local)",
+        error_message="Error getting SFW quote",
+        settings=settings,
+        connector=connector,
+        source='local',
+        strategy=strategy,
+        step_interval_ms=step_interval_ms,
+        step_size=step_size
     )
 
 @app.get("/nsfw_quote")
@@ -186,7 +211,28 @@ async def get_nsfw_quote(
         success_message="Random NSFW quote queued",
         error_message="Error getting NSFW quote",
         settings=settings,
-        connector=connector
+        connector=connector,
+        source='rw'
+    )
+
+@app.get("/nsfw_quote/local")
+async def get_nsfw_quote_local(
+    strategy: Optional[str] = None,
+    step_interval_ms: Optional[int] = None,
+    step_size: Optional[int] = None,
+    settings: Settings = Depends(get_settings),
+    connector: VestaboardConnector = Depends(get_vestaboard_connector)
+) -> Dict[str, str]:
+    return await get_and_send_quote(
+        quote_func=say.GetSingleRandNsfwS,
+        success_message="Random NSFW quote queued (Local)",
+        error_message="Error getting NSFW quote",
+        settings=settings,
+        connector=connector,
+        source='local',
+        strategy=strategy,
+        step_interval_ms=step_interval_ms,
+        step_size=step_size
     )
 
 @app.get("/art")
@@ -199,7 +245,28 @@ async def get_random_art(
         success_message="Random art queued",
         error_message="Error getting art",
         settings=settings,
-        connector=connector
+        connector=connector,
+        source='rw'
+    )
+
+@app.get("/art/local")
+async def get_random_art_local(
+    strategy: Optional[str] = None,
+    step_interval_ms: Optional[int] = None,
+    step_size: Optional[int] = None,
+    settings: Settings = Depends(get_settings),
+    connector: VestaboardConnector = Depends(get_vestaboard_connector)
+) -> Dict[str, str]:
+    return await get_and_send_art(
+        art_func=say.GetSingleRandArt,
+        success_message="Random art queued (Local)",
+        error_message="Error getting art",
+        settings=settings,
+        connector=connector,
+        source='local',
+        strategy=strategy,
+        step_interval_ms=step_interval_ms,
+        step_size=step_size
     )
 
 @app.post("/message", status_code=200)
@@ -211,10 +278,30 @@ async def post_message(
         raise HTTPException(status_code=400, detail="No message content provided.")
 
     await handle_vestaboard_action(
-        lambda: connector.send_message(item.message),
+        lambda: connector.send_message(item.message, source='rw'),
         "Error sending message"
     )
     return {"message": "Message sent successfully"}
+
+@app.post("/message/local", status_code=200)
+async def post_message_local(
+    item: MessageClass,
+    connector: VestaboardConnector = Depends(get_vestaboard_connector)
+) -> Dict[str, str]:
+    if not item.message:
+        raise HTTPException(status_code=400, detail="No message content provided.")
+
+    await handle_vestaboard_action(
+        lambda: connector.send_message(
+            item.message,
+            source='local',
+            strategy=item.strategy,
+            step_interval_ms=item.step_interval_ms,
+            step_size=item.step_size
+        ),
+        "Error sending message"
+    )
+    return {"message": "Message sent successfully (Local)"}
 
 @app.get("/")
 async def home() -> Dict[str, str]:
