@@ -1,6 +1,7 @@
 
 import mysql.connector
 import logging
+import json
 from contextlib import contextmanager
 # from typing import Union # Reverted for Python 3.10+
 from app.config import Settings
@@ -50,22 +51,22 @@ def _db_connection(settings: Settings):
             except mysql.connector.Error as err:
                 log.warning(f"Error closing connection: {err}")
 
-def _fetch_quote_from_table(table_name: str, settings: Settings) -> str | None:
-    """Fetches a random quote from a given table using a managed DB connection."""
+def _fetch_column_from_table(table_name: str, column_name: str, settings: Settings) -> str | None:
+    """Fetches a random value from a given table and column using a managed DB connection."""
     try:
         with _db_connection(settings) as cnx:
             with cnx.cursor() as cur:
-                # Using f-string safely as table_name comes from trusted internal calls
-                query = f'SELECT quote FROM {table_name} ORDER BY RAND() LIMIT 1'
+                # Using f-string safely as table_name and column_name come from trusted internal calls
+                query = f'SELECT {column_name} FROM {table_name} ORDER BY RAND() LIMIT 1'
                 log.debug(f"Executing query: {query}")
                 cur.execute(query)
                 result = cur.fetchone()
 
                 if result and result[0] is not None:
-                    log.debug(f"Quote found in {table_name}.")
+                    log.debug(f"Value found in {table_name}.{column_name}.")
                     return str(result[0])
                 else:
-                    log.warning(f"No quote found in table {table_name} or result was NULL.")
+                    log.warning(f"No value found in table {table_name} or result was NULL.")
                     return None
     except mysql.connector.Error as err:
         log.error(f"Database query error in {table_name}: {err}")
@@ -82,7 +83,7 @@ def GetSingleRandSfwS(settings: Settings) -> str | None: # Reverted
     if settings.saying_db_enable != "1":
          log.info("SFW quote requested but sayings DB is disabled in settings.")
          return None # Or raise an exception if preferred
-    return _fetch_quote_from_table("sfw_quotes", settings)
+    return _fetch_column_from_table("sfw_quotes", "quote", settings)
 
 def GetSingleRandNsfwS(settings: Settings) -> str | None: # Reverted
     """
@@ -92,4 +93,28 @@ def GetSingleRandNsfwS(settings: Settings) -> str | None: # Reverted
     if settings.saying_db_enable != "1":
          log.info("NSFW quote requested but sayings DB is disabled in settings.")
          return None # Or raise an exception if preferred
-    return _fetch_quote_from_table("nsfw_quotes", settings)
+    return _fetch_column_from_table("nsfw_quotes", "quote", settings)
+
+def GetSingleRandArt(settings: Settings) -> list | None:
+    """
+    Gets a random Art array using provided application settings.
+    Returns the character list or None if not found or on error.
+    """
+    if settings.saying_db_enable != "1":
+         log.info("Art requested but sayings DB is disabled in settings.")
+         return None
+
+    art_data_str = _fetch_column_from_table("art", "art_data", settings)
+
+    if art_data_str:
+        try:
+            art_data = json.loads(art_data_str)
+            if isinstance(art_data, list):
+                return art_data
+            else:
+                log.warning("Art data is not a list.")
+                return None
+        except json.JSONDecodeError as e:
+            log.error(f"Failed to decode art data: {e}")
+            return None
+    return None
