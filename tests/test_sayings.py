@@ -90,38 +90,39 @@ class TestSayingFunctions:
 
 class TestArtFunctions:
     def test_db_disabled(self, mock_settings_db_disabled):
-        with patch("app.sayings.sayings._fetch_column_from_table") as mock_fetch:
+        with patch("app.sayings.sayings._fetch_random_row") as mock_fetch:
             result = GetSingleRandArt(settings=mock_settings_db_disabled)
             assert result is None
             mock_fetch.assert_not_called()
 
-    @patch("app.sayings.sayings._fetch_column_from_table")
+    @patch("app.sayings.sayings._fetch_random_row")
     def test_art_found_valid_json(self, mock_fetch, mock_settings_db_enabled):
         expected_art = [[1, 2], [3, 4]]
-        mock_fetch.return_value = json.dumps(expected_art)
+        expected_title = "Mona Lisa"
+        mock_fetch.return_value = (json.dumps(expected_art), expected_title)
 
         result = GetSingleRandArt(settings=mock_settings_db_enabled)
 
-        assert result == expected_art
-        mock_fetch.assert_called_once_with("art", "art_data", mock_settings_db_enabled)
+        assert result == (expected_art, expected_title)
+        mock_fetch.assert_called_once_with("art", ["art_data", "title"], mock_settings_db_enabled)
 
-    @patch("app.sayings.sayings._fetch_column_from_table")
+    @patch("app.sayings.sayings._fetch_random_row")
     def test_art_found_invalid_json(self, mock_fetch, mock_settings_db_enabled):
-        mock_fetch.return_value = "invalid json"
+        mock_fetch.return_value = ("invalid json", "Some Title")
 
         result = GetSingleRandArt(settings=mock_settings_db_enabled)
 
         assert result is None
 
-    @patch("app.sayings.sayings._fetch_column_from_table")
+    @patch("app.sayings.sayings._fetch_random_row")
     def test_art_found_not_list(self, mock_fetch, mock_settings_db_enabled):
-        mock_fetch.return_value = json.dumps({"key": "value"}) # Not a list
+        mock_fetch.return_value = (json.dumps({"key": "value"}), "Some Title") # Not a list
 
         result = GetSingleRandArt(settings=mock_settings_db_enabled)
 
         assert result is None
 
-    @patch("app.sayings.sayings._fetch_column_from_table")
+    @patch("app.sayings.sayings._fetch_random_row")
     def test_no_art_found(self, mock_fetch, mock_settings_db_enabled):
         mock_fetch.return_value = None
 

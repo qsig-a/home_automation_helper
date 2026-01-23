@@ -14,13 +14,14 @@ async def test_get_art_success(
 ):
     mock_settings.saying_db_enable = "1"
     test_art = [[1, 2], [3, 4]]
+    test_title = "Test Art Title"
 
-    mock_to_thread.return_value = test_art
+    mock_to_thread.return_value = (test_art, test_title)
 
     response = client.get("/art")
 
     assert response.status_code == 200
-    assert response.json() == {"message": "Random art queued"}
+    assert response.json() == {"message": "Random art queued", "title": test_title}
     mock_vestaboard_connector.send_array.assert_called_once_with(test_art, source='rw')
 
 @patch("app.main.asyncio.to_thread", new_callable=AsyncMock)

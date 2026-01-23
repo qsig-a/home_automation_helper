@@ -117,6 +117,23 @@ This section details the available API endpoints.
     curl http://localhost:8000/nsfw_quote
     ```
 
+### `GET /art`
+
+-   **Description:** Retrieves a random piece of art from the database and displays it on the Vestaboard. Requires `SAYING_DB_ENABLE="1"`.
+-   **Request Body:** None.
+-   **Response:**
+    ```json
+    {
+        "message": "Random art queued",
+        "title": "Art Title"
+    }
+    ```
+    (Or an error detail if issues occur)
+-   **Example Usage:**
+    ```bash
+    curl http://localhost:8000/art
+    ```
+
 ### Local API Support
 
 The application supports sending messages via the Vestaboard Local API. You can trigger this by using the `/local` suffix on supported endpoints or setting `source='local'` where applicable.
@@ -306,6 +323,7 @@ Refer to the "API Endpoints" section for more details on using these endpoints.
     The database must contain two specific tables:
     1.  `sfw_quotes`: This table stores the Safe For Work quotes.
     2.  `nsfw_quotes`: This table stores the Not Safe For Work quotes.
+    3.  `art`: This table stores the art data and titles.
 
     Each of these tables must have the following column structure:
     -   `quote` (TEXT or VARCHAR): This column holds the actual text of the saying.
@@ -323,6 +341,12 @@ Refer to the "API Endpoints" section for more details on using these endpoints.
         id INT AUTO_INCREMENT PRIMARY KEY,
         quote TEXT NOT NULL,
         source VARCHAR(255)
+    );
+
+    CREATE TABLE art (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        art_data JSON NOT NULL,
+        title VARCHAR(255)
     );
     ```
 
