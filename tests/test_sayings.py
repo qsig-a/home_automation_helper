@@ -1,8 +1,9 @@
 import pytest
 from unittest.mock import patch, MagicMock
 import mysql.connector
+import json
 
-from app.sayings.sayings import GetSingleRandSfwS, GetSingleRandNsfwS
+from app.sayings.sayings import GetSingleRandSfwS, GetSingleRandNsfwS, GetSingleRandArt
 from app.config import Settings
 
 @pytest.fixture
@@ -32,7 +33,7 @@ def mock_settings_db_disabled() -> Settings:
 class TestSayingFunctions:
 
     def test_db_disabled(self, saying_function, table_name, mock_settings_db_disabled):
-        with patch("app.sayings.sayings._fetch_quote_from_table") as mock_fetch:
+        with patch("app.sayings.sayings._fetch_column_from_table") as mock_fetch:
             result = saying_function(settings=mock_settings_db_disabled)
             assert result is None
             mock_fetch.assert_not_called()
@@ -86,3 +87,44 @@ class TestSayingFunctions:
 
         with pytest.raises(ConnectionError, match="Database query failed"):
             saying_function(settings=mock_settings_db_enabled)
+
+class TestArtFunctions:
+    def test_db_disabled(self, mock_settings_db_disabled):
+        with patch("app.sayings.sayings._fetch_column_from_table") as mock_fetch:
+            result = GetSingleRandArt(settings=mock_settings_db_disabled)
+            assert result is None
+            mock_fetch.assert_not_called()
+
+    @patch("app.sayings.sayings._fetch_column_from_table")
+    def test_art_found_valid_json(self, mock_fetch, mock_settings_db_enabled):
+        expected_art = [[1, 2], [3, 4]]
+        mock_fetch.return_value = json.dumps(expected_art)
+
+        result = GetSingleRandArt(settings=mock_settings_db_enabled)
+
+        assert result == expected_art
+        mock_fetch.assert_called_once_with("art", "art_data", mock_settings_db_enabled)
+
+    @patch("app.sayings.sayings._fetch_column_from_table")
+    def test_art_found_invalid_json(self, mock_fetch, mock_settings_db_enabled):
+        mock_fetch.return_value = "invalid json"
+
+        result = GetSingleRandArt(settings=mock_settings_db_enabled)
+
+        assert result is None
+
+    @patch("app.sayings.sayings._fetch_column_from_table")
+    def test_art_found_not_list(self, mock_fetch, mock_settings_db_enabled):
+        mock_fetch.return_value = json.dumps({"key": "value"}) # Not a list
+
+        result = GetSingleRandArt(settings=mock_settings_db_enabled)
+
+        assert result is None
+
+    @patch("app.sayings.sayings._fetch_column_from_table")
+    def test_no_art_found(self, mock_fetch, mock_settings_db_enabled):
+        mock_fetch.return_value = None
+
+        result = GetSingleRandArt(settings=mock_settings_db_enabled)
+
+        assert result is None

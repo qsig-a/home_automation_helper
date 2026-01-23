@@ -101,6 +101,34 @@ async def get_and_send_quote(
         log.exception(f"Unexpected error in quote process: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"{error_message}: An unexpected internal error occurred")
 
+async def get_and_send_art(
+    art_func: Callable[[Settings], List[List[int]] | None],
+    success_message: str,
+    error_message: str,
+    settings: Settings,
+    connector: VestaboardConnector
+) -> Dict[str, str]:
+    try:
+        data = await asyncio.to_thread(art_func, settings=settings)
+        if data is None:
+            log.warning(f"{error_message}: Art function returned None (DB disabled or no art found).")
+            raise HTTPException(status_code=404, detail=f"{error_message}: Art not found or DB disabled")
+
+        await handle_vestaboard_action(
+            lambda: connector.send_array(data),
+            error_message
+        )
+        log.info(f"Successfully sent art to board: {success_message}")
+        return {"message": success_message}
+    except HTTPException:
+        raise
+    except ConnectionError as e:
+        log.error(f"Database connection error getting art: {e}", exc_info=True)
+        raise HTTPException(status_code=503, detail=f"{error_message}: Database unavailable")
+    except Exception as e:
+        log.exception(f"Unexpected error in art process: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"{error_message}: An unexpected internal error occurred")
+
 
 @app.post("/games/boggle", status_code=202)
 async def start_boggle_game(
@@ -157,6 +185,19 @@ async def get_nsfw_quote(
         quote_func=say.GetSingleRandNsfwS,
         success_message="Random NSFW quote queued",
         error_message="Error getting NSFW quote",
+        settings=settings,
+        connector=connector
+    )
+
+@app.get("/art")
+async def get_random_art(
+    settings: Settings = Depends(get_settings),
+    connector: VestaboardConnector = Depends(get_vestaboard_connector)
+) -> Dict[str, str]:
+    return await get_and_send_art(
+        art_func=say.GetSingleRandArt,
+        success_message="Random art queued",
+        error_message="Error getting art",
         settings=settings,
         connector=connector
     )
