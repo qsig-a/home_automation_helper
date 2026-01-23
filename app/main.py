@@ -104,7 +104,7 @@ async def get_and_send_quote(
         raise HTTPException(status_code=500, detail=f"{error_message}: An unexpected internal error occurred")
 
 async def get_and_send_art(
-    art_func: Callable[[Settings], List[List[int]] | None],
+    art_func: Callable[[Settings], List[List[int]] | tuple[List[List[int]], str] | None],
     success_message: str,
     error_message: str,
     settings: Settings,
@@ -113,17 +113,25 @@ async def get_and_send_art(
     **kwargs
 ) -> Dict[str, str]:
     try:
-        data = await asyncio.to_thread(art_func, settings=settings)
-        if data is None:
+        result = await asyncio.to_thread(art_func, settings=settings)
+        if result is None:
             log.warning(f"{error_message}: Art function returned None (DB disabled or no art found).")
             raise HTTPException(status_code=404, detail=f"{error_message}: Art not found or DB disabled")
+
+        title = "Unknown"
+        if isinstance(result, tuple):
+            data, fetched_title = result
+            if fetched_title:
+                title = fetched_title
+        else:
+            data = result
 
         await handle_vestaboard_action(
             lambda: connector.send_array(data, source=source, **kwargs),
             error_message
         )
         log.info(f"Successfully sent art to board: {success_message}")
-        return {"message": success_message}
+        return {"message": success_message, "title": title}
     except HTTPException:
         raise
     except ConnectionError as e:

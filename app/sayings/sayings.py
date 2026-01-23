@@ -73,6 +73,21 @@ def _fetch_column_from_table(table_name: str, column_name: str, settings: Settin
         # Propagate as a standard error for the caller to handle
         raise ConnectionError(f"Database query failed for {table_name}") from err
 
+def _fetch_random_row(table_name: str, columns: list[str], settings: Settings) -> tuple | None:
+    """Fetches a random row for specific columns from a given table."""
+    try:
+        with _db_connection(settings) as cnx:
+            with cnx.cursor() as cur:
+                cols_str = ", ".join(columns)
+                # Using f-string safely as table_name and columns come from trusted internal calls
+                query = f'SELECT {cols_str} FROM {table_name} ORDER BY RAND() LIMIT 1'
+                log.debug(f"Executing query: {query}")
+                cur.execute(query)
+                return cur.fetchone()
+    except mysql.connector.Error as err:
+        log.error(f"Database query error in {table_name}: {err}")
+        raise ConnectionError(f"Database query failed for {table_name}") from err
+
 # --- Public Functions ---
 
 def GetSingleRandSfwS(settings: Settings) -> str | None: # Reverted
@@ -95,22 +110,23 @@ def GetSingleRandNsfwS(settings: Settings) -> str | None: # Reverted
          return None # Or raise an exception if preferred
     return _fetch_column_from_table("nsfw_quotes", "quote", settings)
 
-def GetSingleRandArt(settings: Settings) -> list | None:
+def GetSingleRandArt(settings: Settings) -> tuple[list, str] | None:
     """
-    Gets a random Art array using provided application settings.
-    Returns the character list or None if not found or on error.
+    Gets a random Art array and title using provided application settings.
+    Returns a tuple (art_data, title) or None if not found or on error.
     """
     if settings.saying_db_enable != "1":
          log.info("Art requested but sayings DB is disabled in settings.")
          return None
 
-    art_data_str = _fetch_column_from_table("art", "art_data", settings)
+    row = _fetch_random_row("art", ["art_data", "title"], settings)
 
-    if art_data_str:
+    if row:
+        art_data_str, title = row
         try:
             art_data = json.loads(art_data_str)
             if isinstance(art_data, list):
-                return art_data
+                return (art_data, str(title) if title else "")
             else:
                 log.warning("Art data is not a list.")
                 return None
