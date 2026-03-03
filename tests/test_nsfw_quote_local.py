@@ -36,8 +36,8 @@ def test_get_nsfw_quote_local_success(
     # Verify get_and_send_quote was called with the correct parameters
     mock_get_and_send_quote.assert_called_once()
     kwargs = mock_get_and_send_quote.call_args.kwargs
-    assert kwargs.get("quote_func") == say.GetSingleRandNsfwS
     assert kwargs.get("config") == ActionConfig(
+        func=say.GetSingleRandNsfwS,
         success_message="Random NSFW quote queued (Local)",
         error_message="Error getting NSFW quote",
         source='local'

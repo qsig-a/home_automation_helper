@@ -25,8 +25,8 @@ def test_get_random_art_success(
 
     # Verify get_and_send_art was called with the correct parameters
     mock_get_and_send_art.assert_called_once_with(
-        art_func=say.GetSingleRandArt,
         config=ActionConfig(
+            func=say.GetSingleRandArt,
             success_message="Random art queued",
             error_message="Error getting art",
             source='rw'
@@ -77,8 +77,8 @@ def test_get_random_art_local_success(
     assert response.json() == expected_response
 
     mock_get_and_send_art.assert_called_once_with(
-        art_func=say.GetSingleRandArt,
         config=ActionConfig(
+            func=say.GetSingleRandArt,
             success_message="Random art queued (Local)",
             error_message="Error getting art",
             source='local'
@@ -106,8 +106,8 @@ def test_get_random_art_local_success_with_params(
     assert response.json() == expected_response
 
     mock_get_and_send_art.assert_called_once_with(
-        art_func=say.GetSingleRandArt,
         config=ActionConfig(
+            func=say.GetSingleRandArt,
             success_message="Random art queued (Local)",
             error_message="Error getting art",
             source='local'
