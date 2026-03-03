@@ -1,9 +1,9 @@
+from typing import Optional
+
 from pydantic import BaseModel
 
 class BoggleClass(BaseModel):
     size: int
-
-from typing import Optional
 
 class MessageClass(BaseModel):
     message: str
