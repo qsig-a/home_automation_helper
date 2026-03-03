@@ -184,7 +184,7 @@ Follow these steps to run the application on your local machine:
 3.  **Install dependencies:**
     Ensure your virtual environment is activated, then run:
     ```bash
-    pip install -r requirements.txt
+    poetry install
     ```
 
 4.  **Set up environment variables:**
@@ -193,8 +193,9 @@ Follow these steps to run the application on your local machine:
 
     Here's an example structure for your `.env` file:
     ```env
-    VESTABOARD_API_KEY="your_vestaboard_api_key"
-    VESTABOARD_API_SECRET="your_vestaboard_api_secret"
+    VESTABOARD_RW_API_KEY="your_vestaboard_rw_api_key"
+    VESTABOARD_LOCAL_API_KEY="your_vestaboard_local_api_key"
+    VESTABOARD_LOCAL_API_IP="192.168.1.100"
     SAYING_DB_ENABLE="0" # Set to "1" to enable database features
     # SAYING_DB_USER="your_db_user"
     # SAYING_DB_PASS="your_db_password"
@@ -206,9 +207,9 @@ Follow these steps to run the application on your local machine:
 5.  **Run the application:**
     Once the dependencies are installed and your `.env` file is configured, you can start the FastAPI application using Uvicorn:
     ```bash
-    uvicorn app.main:app --reload
+    poetry run fastapi dev app/main.py
     ```
-    The application will typically be available at `http://127.0.0.1:8000`. The `--reload` flag enables auto-reloading when code changes are detected.
+    The application will typically be available at `http://127.0.0.1:8000`. The `dev` command enables auto-reloading when code changes are detected.
 
 ### Docker
 
@@ -225,9 +226,10 @@ You can also run the application using Docker.
 
     **Option A: Passing variables directly**
     ```bash
-    docker run -d -p 8000:8000 \
-      --env VESTABOARD_API_KEY="your_vestaboard_api_key" \
-      --env VESTABOARD_API_SECRET="your_vestaboard_api_secret" \
+    docker run -d -p 8000:80 \
+      --env VESTABOARD_RW_API_KEY="your_vestaboard_rw_api_key" \
+      --env VESTABOARD_LOCAL_API_KEY="your_vestaboard_local_api_key" \
+      --env VESTABOARD_LOCAL_API_IP="192.168.1.100" \
       --env SAYING_DB_ENABLE="0" \
       # Add other --env flags as needed based on the "Environment variables" section
       --name home-automation-app \
@@ -237,7 +239,7 @@ You can also run the application using Docker.
     **Option B: Using an environment file**
     Create a `.env` file (as described in the "Local Development" setup) in your project root. Then run:
     ```bash
-    docker run -d -p 8000:8000 \
+    docker run -d -p 8000:80 \
       --env-file .env \
       --name home-automation-app \
       home-automation-server
@@ -246,28 +248,28 @@ You can also run the application using Docker.
 
 ### Running Tests
 
-This project uses `pytest` for unit and integration testing. Test dependencies are included in `requirements.txt`.
+This project uses `pytest` for unit and integration testing. Test dependencies are managed by Poetry.
 
 1.  **Ensure dependencies are installed:**
     If you haven't already, install all necessary dependencies including `pytest`:
     ```bash
-    pip install -r requirements.txt
+    poetry install
     ```
 
 2.  **Run all tests:**
     Navigate to the root directory of the project and run:
     ```bash
-    pytest
+    poetry run pytest
     ```
 
 3.  **Run tests with more options:**
     *   To run tests for a specific file:
         ```bash
-        pytest tests/test_main.py
+        poetry run pytest tests/test_main.py
         ```
     *   To run tests with increased verbosity (shows individual test names):
         ```bash
-        pytest -v
+        poetry run pytest -v
         ```
 
 Tests are also automatically executed via GitHub Actions on every push and pull request to the `main` branch, ensuring code quality and integration.
