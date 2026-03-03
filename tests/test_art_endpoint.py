@@ -16,30 +16,6 @@ def test_get_random_art_success(
     """Tests successful random art retrieval and sending by mocking get_and_send_art."""
     expected_response = {"message": "Random art queued", "title": "Test Title"}
     mock_get_and_send_art.return_value = expected_response
-
-    response = client.get("/art")
-
-    assert response.status_code == 200
-    assert response.json() == expected_response
-
-    # Verify get_and_send_art was called with the correct parameters
-    mock_get_and_send_art.assert_called_once_with(
-        art_func=say.GetSingleRandArt,
-        success_message="Random art queued",
-        error_message="Error getting art",
-        settings=mock_settings,
-        connector=mock_vestaboard_connector,
-        source='rw'
-    )
-
-@patch("app.main.get_and_send_art", new_callable=AsyncMock)
-def test_get_random_art_not_found(
-    mock_get_and_send_art: AsyncMock,
-    client: TestClient
-):
-    """Tests art endpoint when get_and_send_art raises 404."""
-    mock_get_and_send_art.side_effect = HTTPException(status_code=404, detail="Error getting art: Art not found or DB disabled")
-
     response = client.get("/art")
 
     assert response.status_code == 404
@@ -73,27 +49,23 @@ def test_get_random_art_local_success(
     assert response.status_code == 200
     assert response.json() == expected_response
 
+    # Verify get_and_send_art was called with the correct parameters
     mock_get_and_send_art.assert_called_once_with(
         art_func=say.GetSingleRandArt,
-        success_message="Random art queued (Local)",
+        success_message="Random art queued",
         error_message="Error getting art",
         settings=mock_settings,
         connector=mock_vestaboard_connector,
-        source="local",
-        strategy=None,
-        step_interval_ms=None,
-        step_size=None
+        source='rw'
     )
 
 @patch("app.main.get_and_send_art", new_callable=AsyncMock)
-def test_get_random_art_local_success_with_params(
+def test_get_random_art_not_found(
     mock_get_and_send_art: AsyncMock,
-    client: TestClient,
-    mock_settings: Settings,
-    mock_vestaboard_connector: AsyncMock
+    client: TestClient
 ):
-    expected_response = {"message": "Random art queued (Local)", "title": "Test Title"}
-    mock_get_and_send_art.return_value = expected_response
+    """Tests art endpoint when get_and_send_art raises 404."""
+    mock_get_and_send_art.side_effect = HTTPException(status_code=404, detail="Error getting art: Art not found or DB disabled")
 
     response = client.get("/art/local?strategy=column&step_interval_ms=1000&step_size=2")
 
@@ -125,13 +97,14 @@ def test_get_random_art_local_not_found(
     assert "Error getting art: Art not found or DB disabled" in response.json()["detail"]
 
 @patch("app.main.get_and_send_art", new_callable=AsyncMock)
-def test_get_random_art_local_error(
+def test_get_random_art_internal_error(
     mock_get_and_send_art: AsyncMock,
     client: TestClient
 ):
+    """Tests art endpoint when get_and_send_art raises 500."""
     mock_get_and_send_art.side_effect = HTTPException(status_code=500, detail="Error getting art: An unexpected internal error occurred")
 
-    response = client.get("/art/local")
+    response = client.get("/art")
 
     assert response.status_code == 500
     assert "Error getting art: An unexpected internal error occurred" in response.json()["detail"]
