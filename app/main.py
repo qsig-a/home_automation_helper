@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+from dataclasses import dataclass
 from typing import List, Dict, Callable, Awaitable, TypeVar, Optional
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends, Request
@@ -22,6 +23,12 @@ log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 T = TypeVar('T')
+
+@dataclass
+class ActionConfig:
+    success_message: str
+    error_message: str
+    source: str = 'rw'
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -82,48 +89,44 @@ async def handle_vestaboard_action(
 
 async def get_and_send_quote(
     quote_func: Callable[[Settings], str | None],
-    success_message: str,
-    error_message: str,
+    config: ActionConfig,
     settings: Settings,
     connector: VestaboardConnector,
-    source: str = 'rw',
     **kwargs
 ) -> Dict[str, str]:
     try:
         data = await asyncio.to_thread(quote_func, settings=settings)
         if data is None:
-            log.warning(f"{error_message}: Quote function returned None (DB disabled or no quote found).")
-            raise HTTPException(status_code=404, detail=f"{error_message}: Quote not found or DB disabled")
+            log.warning(f"{config.error_message}: Quote function returned None (DB disabled or no quote found).")
+            raise HTTPException(status_code=404, detail=f"{config.error_message}: Quote not found or DB disabled")
 
         await handle_vestaboard_action(
-            lambda: connector.send_message(data, source=source, **kwargs),
-            error_message
+            lambda: connector.send_message(data, source=config.source, **kwargs),
+            config.error_message
         )
-        log.info(f"Successfully sent quote to board: {success_message}")
-        return {"message": success_message}
+        log.info(f"Successfully sent quote to board: {config.success_message}")
+        return {"message": config.success_message}
     except HTTPException:
         raise
     except ConnectionError as e:
         log.error(f"Database connection error getting quote: {e}", exc_info=True)
-        raise HTTPException(status_code=503, detail=f"{error_message}: Database unavailable")
+        raise HTTPException(status_code=503, detail=f"{config.error_message}: Database unavailable")
     except Exception as e:
         log.exception(f"Unexpected error in quote process: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"{error_message}: An unexpected internal error occurred")
+        raise HTTPException(status_code=500, detail=f"{config.error_message}: An unexpected internal error occurred")
 
 async def get_and_send_art(
     art_func: Callable[[Settings], List[List[int]] | tuple[List[List[int]], str] | None],
-    success_message: str,
-    error_message: str,
+    config: ActionConfig,
     settings: Settings,
     connector: VestaboardConnector,
-    source: str = 'rw',
     **kwargs
 ) -> Dict[str, str]:
     try:
         result = await asyncio.to_thread(art_func, settings=settings)
         if result is None:
-            log.warning(f"{error_message}: Art function returned None (DB disabled or no art found).")
-            raise HTTPException(status_code=404, detail=f"{error_message}: Art not found or DB disabled")
+            log.warning(f"{config.error_message}: Art function returned None (DB disabled or no art found).")
+            raise HTTPException(status_code=404, detail=f"{config.error_message}: Art not found or DB disabled")
 
         title = "Unknown"
         if isinstance(result, tuple):
@@ -134,19 +137,19 @@ async def get_and_send_art(
             data = result
 
         await handle_vestaboard_action(
-            lambda: connector.send_array(data, source=source, **kwargs),
-            error_message
+            lambda: connector.send_array(data, source=config.source, **kwargs),
+            config.error_message
         )
-        log.info(f"Successfully sent art to board: {success_message}")
-        return {"message": success_message, "title": title}
+        log.info(f"Successfully sent art to board: {config.success_message}")
+        return {"message": config.success_message, "title": title}
     except HTTPException:
         raise
     except ConnectionError as e:
         log.error(f"Database connection error getting art: {e}", exc_info=True)
-        raise HTTPException(status_code=503, detail=f"{error_message}: Database unavailable")
+        raise HTTPException(status_code=503, detail=f"{config.error_message}: Database unavailable")
     except Exception as e:
         log.exception(f"Unexpected error in art process: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"{error_message}: An unexpected internal error occurred")
+        raise HTTPException(status_code=500, detail=f"{config.error_message}: An unexpected internal error occurred")
 
 
 @app.post("/games/boggle", status_code=202)
@@ -189,11 +192,13 @@ async def get_sfw_quote(
 ) -> Dict[str, str]:
     return await get_and_send_quote(
         quote_func=say.GetSingleRandSfwS,
-        success_message="Random SFW quote queued",
-        error_message="Error getting SFW quote",
+        config=ActionConfig(
+            success_message="Random SFW quote queued",
+            error_message="Error getting SFW quote",
+            source='rw'
+        ),
         settings=settings,
-        connector=connector,
-        source='rw'
+        connector=connector
     )
 
 @app.get("/sfw_quote/local")
@@ -206,11 +211,13 @@ async def get_sfw_quote_local(
 ) -> Dict[str, str]:
     return await get_and_send_quote(
         quote_func=say.GetSingleRandSfwS,
-        success_message="Random SFW quote queued (Local)",
-        error_message="Error getting SFW quote",
+        config=ActionConfig(
+            success_message="Random SFW quote queued (Local)",
+            error_message="Error getting SFW quote",
+            source='local'
+        ),
         settings=settings,
         connector=connector,
-        source='local',
         strategy=strategy,
         step_interval_ms=step_interval_ms,
         step_size=step_size
@@ -223,11 +230,13 @@ async def get_nsfw_quote(
 ) -> Dict[str, str]:
     return await get_and_send_quote(
         quote_func=say.GetSingleRandNsfwS,
-        success_message="Random NSFW quote queued",
-        error_message="Error getting NSFW quote",
+        config=ActionConfig(
+            success_message="Random NSFW quote queued",
+            error_message="Error getting NSFW quote",
+            source='rw'
+        ),
         settings=settings,
-        connector=connector,
-        source='rw'
+        connector=connector
     )
 
 @app.get("/nsfw_quote/local")
@@ -240,11 +249,13 @@ async def get_nsfw_quote_local(
 ) -> Dict[str, str]:
     return await get_and_send_quote(
         quote_func=say.GetSingleRandNsfwS,
-        success_message="Random NSFW quote queued (Local)",
-        error_message="Error getting NSFW quote",
+        config=ActionConfig(
+            success_message="Random NSFW quote queued (Local)",
+            error_message="Error getting NSFW quote",
+            source='local'
+        ),
         settings=settings,
         connector=connector,
-        source='local',
         strategy=strategy,
         step_interval_ms=step_interval_ms,
         step_size=step_size
@@ -257,11 +268,13 @@ async def get_random_art(
 ) -> Dict[str, str]:
     return await get_and_send_art(
         art_func=say.GetSingleRandArt,
-        success_message="Random art queued",
-        error_message="Error getting art",
+        config=ActionConfig(
+            success_message="Random art queued",
+            error_message="Error getting art",
+            source='rw'
+        ),
         settings=settings,
-        connector=connector,
-        source='rw'
+        connector=connector
     )
 
 @app.get("/art/local")
@@ -274,11 +287,13 @@ async def get_random_art_local(
 ) -> Dict[str, str]:
     return await get_and_send_art(
         art_func=say.GetSingleRandArt,
-        success_message="Random art queued (Local)",
-        error_message="Error getting art",
+        config=ActionConfig(
+            success_message="Random art queued (Local)",
+            error_message="Error getting art",
+            source='local'
+        ),
         settings=settings,
         connector=connector,
-        source='local',
         strategy=strategy,
         step_interval_ms=step_interval_ms,
         step_size=step_size

@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 from app.config import Settings
 from fastapi import HTTPException
 import app.sayings.sayings as say
+from app.main import ActionConfig
 
 @patch("app.main.get_and_send_quote", new_callable=AsyncMock)
 def test_get_nsfw_quote_success(
@@ -24,11 +25,13 @@ def test_get_nsfw_quote_success(
     # Verify get_and_send_quote was called with the correct parameters
     mock_get_and_send_quote.assert_called_once_with(
         quote_func=say.GetSingleRandNsfwS,
-        success_message="Random NSFW quote queued",
-        error_message="Error getting NSFW quote",
+        config=ActionConfig(
+            success_message="Random NSFW quote queued",
+            error_message="Error getting NSFW quote",
+            source='rw'
+        ),
         settings=mock_settings,
-        connector=mock_vestaboard_connector,
-        source='rw'
+        connector=mock_vestaboard_connector
     )
 
 @patch("app.main.get_and_send_quote", new_callable=AsyncMock)

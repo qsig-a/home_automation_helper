@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 from app.config import Settings
 from fastapi import HTTPException
 import app.sayings.sayings as say
+from app.main import ActionConfig
 
 @pytest.mark.parametrize(
     "endpoint_path, strategy, step_interval_ms, step_size",
@@ -36,11 +37,13 @@ def test_get_nsfw_quote_local_success(
     mock_get_and_send_quote.assert_called_once()
     kwargs = mock_get_and_send_quote.call_args.kwargs
     assert kwargs.get("quote_func") == say.GetSingleRandNsfwS
-    assert kwargs.get("success_message") == "Random NSFW quote queued (Local)"
-    assert kwargs.get("error_message") == "Error getting NSFW quote"
+    assert kwargs.get("config") == ActionConfig(
+        success_message="Random NSFW quote queued (Local)",
+        error_message="Error getting NSFW quote",
+        source='local'
+    )
     assert kwargs.get("settings") == mock_settings
     assert kwargs.get("connector") == mock_vestaboard_connector
-    assert kwargs.get("source") == 'local'
 
 @patch("app.main.get_and_send_quote", new_callable=AsyncMock)
 def test_get_nsfw_quote_local_not_found(
