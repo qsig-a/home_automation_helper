@@ -3,7 +3,7 @@
 import httpx
 import re
 import logging
-from typing import Optional, List, Dict, Any, Union
+from typing import List, Dict, Any, Union
 
 # Import central settings configuration
 from app.config import Settings
