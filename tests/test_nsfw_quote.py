@@ -24,8 +24,8 @@ def test_get_nsfw_quote_success(
 
     # Verify get_and_send_quote was called with the correct parameters
     mock_get_and_send_quote.assert_called_once_with(
-        quote_func=say.GetSingleRandNsfwS,
         config=ActionConfig(
+            func=say.GetSingleRandNsfwS,
             success_message="Random NSFW quote queued",
             error_message="Error getting NSFW quote",
             source='rw'

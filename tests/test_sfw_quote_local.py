@@ -35,8 +35,8 @@ def test_get_sfw_quote_local_success(
     # Verify get_and_send_quote was called with the correct parameters
     import app.sayings.sayings as say
     mock_get_and_send_quote.assert_called_once_with(
-        quote_func=say.GetSingleRandSfwS,
         config=ActionConfig(
+            func=say.GetSingleRandSfwS,
             success_message="Random SFW quote queued (Local)",
             error_message="Error getting SFW quote",
             source='local'

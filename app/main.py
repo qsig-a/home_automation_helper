@@ -3,13 +3,13 @@
 import asyncio
 import logging
 from dataclasses import dataclass
-from typing import List, Dict, Callable, Awaitable, TypeVar, Optional
+from typing import List, Dict, Callable, Awaitable, TypeVar, Generic
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends, Request
 from contextlib import asynccontextmanager
 
 from app.config import Settings, get_settings
-from app.models import MessageClass, BoggleClass
+from app.models import MessageClass, BoggleClass, LocalBoardOptions
 import app.games.boggle as bg
 import app.sayings.sayings as say
 from app.connectors.vestaboard import (
@@ -23,9 +23,11 @@ log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 T = TypeVar('T')
+T_Data = TypeVar('T_Data')
 
 @dataclass
-class ActionConfig:
+class ActionConfig(Generic[T_Data]):
+    func: Callable[[Settings], T_Data]
     success_message: str
     error_message: str
     source: str = 'rw'
@@ -88,14 +90,13 @@ async def handle_vestaboard_action(
 
 
 async def get_and_send_quote(
-    quote_func: Callable[[Settings], str | None],
-    config: ActionConfig,
+    config: ActionConfig[str | None],
     settings: Settings,
     connector: VestaboardConnector,
     **kwargs
 ) -> Dict[str, str]:
     try:
-        data = await asyncio.to_thread(quote_func, settings=settings)
+        data = await asyncio.to_thread(config.func, settings=settings)
         if data is None:
             log.warning(f"{config.error_message}: Quote function returned None (DB disabled or no quote found).")
             raise HTTPException(status_code=404, detail=f"{config.error_message}: Quote not found or DB disabled")
@@ -116,14 +117,13 @@ async def get_and_send_quote(
         raise HTTPException(status_code=500, detail=f"{config.error_message}: An unexpected internal error occurred")
 
 async def get_and_send_art(
-    art_func: Callable[[Settings], List[List[int]] | tuple[List[List[int]], str] | None],
-    config: ActionConfig,
+    config: ActionConfig[List[List[int]] | tuple[List[List[int]], str] | None],
     settings: Settings,
     connector: VestaboardConnector,
     **kwargs
 ) -> Dict[str, str]:
     try:
-        result = await asyncio.to_thread(art_func, settings=settings)
+        result = await asyncio.to_thread(config.func, settings=settings)
         if result is None:
             log.warning(f"{config.error_message}: Art function returned None (DB disabled or no art found).")
             raise HTTPException(status_code=404, detail=f"{config.error_message}: Art not found or DB disabled")
@@ -191,8 +191,8 @@ async def get_sfw_quote(
     connector: VestaboardConnector = Depends(get_vestaboard_connector)
 ) -> Dict[str, str]:
     return await get_and_send_quote(
-        quote_func=say.GetSingleRandSfwS,
         config=ActionConfig(
+            func=say.GetSingleRandSfwS,
             success_message="Random SFW quote queued",
             error_message="Error getting SFW quote",
             source='rw'
@@ -203,24 +203,22 @@ async def get_sfw_quote(
 
 @app.get("/sfw_quote/local")
 async def get_sfw_quote_local(
-    strategy: Optional[str] = None,
-    step_interval_ms: Optional[int] = None,
-    step_size: Optional[int] = None,
+    options: LocalBoardOptions = Depends(),
     settings: Settings = Depends(get_settings),
     connector: VestaboardConnector = Depends(get_vestaboard_connector)
 ) -> Dict[str, str]:
     return await get_and_send_quote(
-        quote_func=say.GetSingleRandSfwS,
         config=ActionConfig(
+            func=say.GetSingleRandSfwS,
             success_message="Random SFW quote queued (Local)",
             error_message="Error getting SFW quote",
             source='local'
         ),
         settings=settings,
         connector=connector,
-        strategy=strategy,
-        step_interval_ms=step_interval_ms,
-        step_size=step_size
+        strategy=options.strategy,
+        step_interval_ms=options.step_interval_ms,
+        step_size=options.step_size
     )
 
 @app.get("/nsfw_quote")
@@ -229,8 +227,8 @@ async def get_nsfw_quote(
     connector: VestaboardConnector = Depends(get_vestaboard_connector)
 ) -> Dict[str, str]:
     return await get_and_send_quote(
-        quote_func=say.GetSingleRandNsfwS,
         config=ActionConfig(
+            func=say.GetSingleRandNsfwS,
             success_message="Random NSFW quote queued",
             error_message="Error getting NSFW quote",
             source='rw'
@@ -241,24 +239,22 @@ async def get_nsfw_quote(
 
 @app.get("/nsfw_quote/local")
 async def get_nsfw_quote_local(
-    strategy: Optional[str] = None,
-    step_interval_ms: Optional[int] = None,
-    step_size: Optional[int] = None,
+    options: LocalBoardOptions = Depends(),
     settings: Settings = Depends(get_settings),
     connector: VestaboardConnector = Depends(get_vestaboard_connector)
 ) -> Dict[str, str]:
     return await get_and_send_quote(
-        quote_func=say.GetSingleRandNsfwS,
         config=ActionConfig(
+            func=say.GetSingleRandNsfwS,
             success_message="Random NSFW quote queued (Local)",
             error_message="Error getting NSFW quote",
             source='local'
         ),
         settings=settings,
         connector=connector,
-        strategy=strategy,
-        step_interval_ms=step_interval_ms,
-        step_size=step_size
+        strategy=options.strategy,
+        step_interval_ms=options.step_interval_ms,
+        step_size=options.step_size
     )
 
 @app.get("/art")
@@ -267,8 +263,8 @@ async def get_random_art(
     connector: VestaboardConnector = Depends(get_vestaboard_connector)
 ) -> Dict[str, str]:
     return await get_and_send_art(
-        art_func=say.GetSingleRandArt,
         config=ActionConfig(
+            func=say.GetSingleRandArt,
             success_message="Random art queued",
             error_message="Error getting art",
             source='rw'
@@ -279,24 +275,22 @@ async def get_random_art(
 
 @app.get("/art/local")
 async def get_random_art_local(
-    strategy: Optional[str] = None,
-    step_interval_ms: Optional[int] = None,
-    step_size: Optional[int] = None,
+    options: LocalBoardOptions = Depends(),
     settings: Settings = Depends(get_settings),
     connector: VestaboardConnector = Depends(get_vestaboard_connector)
 ) -> Dict[str, str]:
     return await get_and_send_art(
-        art_func=say.GetSingleRandArt,
         config=ActionConfig(
+            func=say.GetSingleRandArt,
             success_message="Random art queued (Local)",
             error_message="Error getting art",
             source='local'
         ),
         settings=settings,
         connector=connector,
-        strategy=strategy,
-        step_interval_ms=step_interval_ms,
-        step_size=step_size
+        strategy=options.strategy,
+        step_interval_ms=options.step_interval_ms,
+        step_size=options.step_size
     )
 
 @app.post("/message", status_code=200)

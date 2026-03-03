@@ -23,8 +23,8 @@ def test_get_sfw_quote_success(
     assert response.json() == expected_response
 
     mock_get_and_send_quote.assert_called_once_with(
-        quote_func=say.GetSingleRandSfwS,
         config=ActionConfig(
+            func=say.GetSingleRandSfwS,
             success_message="Random SFW quote queued",
             error_message="Error getting SFW quote",
             source='rw'
