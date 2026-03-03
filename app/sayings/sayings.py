@@ -57,7 +57,14 @@ def _fetch_column_from_table(table_name: str, column_name: str, settings: Settin
         with _db_connection(settings) as cnx:
             with cnx.cursor() as cur:
                 # Using f-string safely as table_name and column_name come from trusted internal calls
-                query = f'SELECT {column_name} FROM {table_name} ORDER BY RAND() LIMIT 1'
+                query = f"""
+                    SELECT {column_name}
+                    FROM {table_name}
+                    WHERE id >= (
+                        SELECT FLOOR(RAND() * ((SELECT MAX(id) FROM {table_name}) - (SELECT MIN(id) FROM {table_name}) + 1) + (SELECT MIN(id) FROM {table_name}))
+                    )
+                    ORDER BY id LIMIT 1
+                """
                 log.debug(f"Executing query: {query}")
                 cur.execute(query)
                 result = cur.fetchone()
@@ -80,7 +87,14 @@ def _fetch_random_row(table_name: str, columns: list[str], settings: Settings) -
             with cnx.cursor() as cur:
                 cols_str = ", ".join(columns)
                 # Using f-string safely as table_name and columns come from trusted internal calls
-                query = f'SELECT {cols_str} FROM {table_name} ORDER BY RAND() LIMIT 1'
+                query = f"""
+                    SELECT {cols_str}
+                    FROM {table_name}
+                    WHERE id >= (
+                        SELECT FLOOR(RAND() * ((SELECT MAX(id) FROM {table_name}) - (SELECT MIN(id) FROM {table_name}) + 1) + (SELECT MIN(id) FROM {table_name}))
+                    )
+                    ORDER BY id LIMIT 1
+                """
                 log.debug(f"Executing query: {query}")
                 cur.execute(query)
                 return cur.fetchone()
