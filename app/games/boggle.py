@@ -1,4 +1,3 @@
-import copy
 from random import choice, shuffle
 from typing import List, Tuple, Dict, Any
 
@@ -78,7 +77,8 @@ def _roll_dice_and_get_letters(dice_set: List[List[str]]) -> List[int]:
 
 def _populate_grid(template: List[List[int]], letters: List[int]) -> List[List[int]]:
     """Populates a grid template with letters."""
-    populated_grid = copy.deepcopy(template)
+    # ⚡ Bolt: Using list comprehension instead of deepcopy for performance
+    populated_grid = [row[:] for row in template]
     shuffled_letters = letters[:]
     shuffle(shuffled_letters)
 
@@ -99,7 +99,8 @@ def _populate_grid(template: List[List[int]], letters: List[int]) -> List[List[i
 
 def _create_end_grid(start_grid: List[List[int]]) -> List[List[int]]:
     """Creates the end grid by modifying boundary markers."""
-    end_grid = copy.deepcopy(start_grid)
+    # ⚡ Bolt: Using list comprehension instead of deepcopy for performance
+    end_grid = [row[:] for row in start_grid]
     for row in end_grid:
         for i, cell in enumerate(row):
             if cell == BOUNDARY_START:
@@ -118,11 +119,12 @@ def generate_boggle_grids(size: int) -> Tuple[List[List[int]], List[List[int]]]:
     populated_mid_rows = _populate_grid(config["mid_rows"], letter_numbers)
 
     start_grid: List[List[int]] = []
+    # ⚡ Bolt: Using slice [:] instead of deepcopy for performance
     if config["begin_row"]:
-        start_grid.append(copy.deepcopy(config["begin_row"]))
+        start_grid.append(config["begin_row"][:])
 
     start_grid.extend(populated_mid_rows)
-    start_grid.append(copy.deepcopy(config["end_row"]))
+    start_grid.append(config["end_row"][:])
 
     end_grid = _create_end_grid(start_grid)
 
