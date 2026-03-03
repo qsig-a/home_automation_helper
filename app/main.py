@@ -31,8 +31,15 @@ async def lifespan(app: FastAPI):
         connector = VestaboardConnector(settings)
         app.state.vestaboard_connector = connector
         log.info("Vestaboard connector initialized.")
+
+        log.info("Application startup: Initializing database connection pool...")
+        say.init_db_pool(settings)
+
         yield
     finally:
+        log.info("Application shutdown: Closing database connection pool...")
+        say.close_db_pool()
+
         log.info("Application shutdown: Closing Vestaboard connector...")
         if hasattr(app.state, 'vestaboard_connector') and app.state.vestaboard_connector:
             await app.state.vestaboard_connector.close()

@@ -1,5 +1,6 @@
 
 import mysql.connector
+from mysql.connector import pooling
 import logging
 import json
 from contextlib import contextmanager
@@ -9,6 +10,53 @@ from app.config import Settings
 # Setup basic logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 log = logging.getLogger(__name__)
+
+_connection_pool = None
+
+def init_db_pool(settings: Settings):
+    """Initializes the MySQL connection pool."""
+    global _connection_pool
+    if settings.saying_db_enable != "1":
+        log.info("Database disabled, not initializing connection pool.")
+        return
+
+    required_settings = [
+        settings.saying_db_user,
+        settings.saying_db_pass,
+        settings.saying_db_host,
+        settings.saying_db_port,
+        settings.saying_db_name
+    ]
+    if not all(required_settings):
+        log.error("Database configuration is incomplete, cannot initialize pool.")
+        return
+
+    try:
+        _connection_pool = pooling.MySQLConnectionPool(
+            pool_name="sayings_pool",
+            pool_size=5,
+            pool_reset_session=True,
+            user=settings.saying_db_user,
+            password=settings.saying_db_pass,
+            host=settings.saying_db_host,
+            port=int(settings.saying_db_port),
+            database=settings.saying_db_name,
+            connection_timeout=5
+        )
+        log.info("Database connection pool initialized.")
+    except mysql.connector.Error as err:
+        log.error(f"Error initializing connection pool: {err}")
+    except ValueError as verr:
+        log.error(f"Database configuration error for pool: {verr}")
+
+def close_db_pool():
+    """Closes the connection pool (no direct method, just cleanup reference)."""
+    global _connection_pool
+    if _connection_pool:
+        # Note: MySQLConnectionPool does not have a close() method.
+        # Connections returned to the pool are closed when the pool object is garbage collected.
+        _connection_pool = None
+        log.info("Database connection pool reference cleared.")
 
 @contextmanager
 def _db_connection(settings: Settings):
@@ -25,18 +73,28 @@ def _db_connection(settings: Settings):
         log.error("Database configuration is incomplete.")
         raise ConnectionError("Database configuration is incomplete.")
 
+    global _connection_pool
     cnx = None
+
     try:
-        cnx = mysql.connector.connect(
-            user=settings.saying_db_user,
-            password=settings.saying_db_pass,
-            host=settings.saying_db_host,
-            port=int(settings.saying_db_port),
-            database=settings.saying_db_name,
-            connection_timeout=5
-        )
-        log.debug("Database connection successful.")
+        if _connection_pool:
+            cnx = _connection_pool.get_connection()
+            log.debug("Obtained connection from pool.")
+        else:
+            # Fallback for testing or if pool initialization failed
+            cnx = mysql.connector.connect(
+                user=settings.saying_db_user,
+                password=settings.saying_db_pass,
+                host=settings.saying_db_host,
+                port=int(settings.saying_db_port),
+                database=settings.saying_db_name,
+                connection_timeout=5
+            )
+            log.debug("Database connection successful (no pool).")
         yield cnx
+    except mysql.connector.PoolError as err:
+        log.error(f"Error getting connection from pool: {err}")
+        raise ConnectionError(f"Database connection pool exhausted: {err}") from err
     except mysql.connector.Error as err:
         log.error(f"Error connecting to database: {err}")
         raise ConnectionError(f"Database connection failed: {err}") from err
@@ -47,9 +105,9 @@ def _db_connection(settings: Settings):
         if cnx and cnx.is_connected():
             try:
                 cnx.close()
-                log.debug("Database connection closed.")
+                log.debug("Database connection returned to pool or closed.")
             except mysql.connector.Error as err:
-                log.warning(f"Error closing connection: {err}")
+                log.warning(f"Error closing connection/returning to pool: {err}")
 
 def _fetch_column_from_table(table_name: str, column_name: str, settings: Settings) -> str | None:
     """Fetches a random value from a given table and column using a managed DB connection."""
