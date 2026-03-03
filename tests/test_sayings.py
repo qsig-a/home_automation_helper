@@ -54,7 +54,7 @@ class TestSayingFunctions:
 
         assert result == expected_quote
         mock_db_conn.assert_called_once_with(mock_settings_db_enabled)
-        expected_query = f"SELECT quote FROM {table_name} ORDER BY RAND() LIMIT 1"
+        expected_query = f"SELECT t1.quote FROM {table_name} AS t1 JOIN (SELECT id FROM {table_name} ORDER BY RAND() LIMIT 1) as t2 ON t1.id = t2.id"
         mock_cursor.execute.assert_called_once_with(expected_query)
 
     @patch("app.sayings.sayings._db_connection")
