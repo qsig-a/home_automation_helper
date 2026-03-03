@@ -95,6 +95,84 @@ def test_post_message_unexpected_error(client: TestClient, mock_vestaboard_conne
     assert "Error sending message: An unexpected internal error occurred." in response.json()["detail"]
 
 
+# --- Tests for POST /message/local endpoint ---
+def test_post_message_local_success(client: TestClient, mock_vestaboard_connector: AsyncMock):
+    """Tests successful local message posting."""
+    test_message = "Local Vestaboard"
+    response = client.post("/message/local", json={"message": test_message})
+    assert response.status_code == 200
+    assert response.json() == {"message": "Message sent successfully (Local)"}
+    mock_vestaboard_connector.send_message.assert_called_once_with(
+        test_message,
+        source='local',
+        strategy=None,
+        step_interval_ms=None,
+        step_size=None
+    )
+
+def test_post_message_local_with_parameters(client: TestClient, mock_vestaboard_connector: AsyncMock):
+    """Tests successful local message posting with transition parameters."""
+    test_message = "Local Parameters"
+    response = client.post("/message/local", json={
+        "message": test_message,
+        "strategy": "random",
+        "step_interval_ms": 20,
+        "step_size": 2
+    })
+    assert response.status_code == 200
+    assert response.json() == {"message": "Message sent successfully (Local)"}
+    mock_vestaboard_connector.send_message.assert_called_once_with(
+        test_message,
+        source='local',
+        strategy="random",
+        step_interval_ms=20,
+        step_size=2
+    )
+
+def test_post_message_local_empty_payload(client: TestClient):
+    """Tests posting an empty local message."""
+    response = client.post("/message/local", json={"message": ""})
+    assert response.status_code == 400
+    assert response.json() == {"detail": "No message content provided."}
+
+def test_post_message_local_no_content_provided(client: TestClient):
+    """Tests posting to local endpoint with no message content (Pydantic validation)."""
+    response = client.post("/message/local", json={})
+    assert response.status_code == 422
+
+def test_post_message_local_invalid_chars_error(client: TestClient, mock_vestaboard_connector: AsyncMock):
+    """Tests VestaboardInvalidCharsError handling for local endpoint."""
+    test_message = "Invalid char local ~"
+    mock_vestaboard_connector.send_message.side_effect = VestaboardInvalidCharsError("Invalid character")
+    response = client.post("/message/local", json={"message": test_message})
+    assert response.status_code == 422
+    assert "Error sending message: Invalid characters. Invalid character" in response.json()["detail"]
+
+def test_post_message_local_auth_error(client: TestClient, mock_vestaboard_connector: AsyncMock):
+    """Tests VestaboardAuthError handling for local endpoint."""
+    test_message = "Auth error test local"
+    mock_vestaboard_connector.send_message.side_effect = VestaboardAuthError("Auth failed")
+    response = client.post("/message/local", json={"message": test_message})
+    assert response.status_code == 503
+    assert "Error sending message: Vestaboard authentication error." in response.json()["detail"]
+
+def test_post_message_local_general_vestaboard_error(client: TestClient, mock_vestaboard_connector: AsyncMock):
+    """Tests general VestaboardError handling for local endpoint."""
+    test_message = "General error test local"
+    mock_vestaboard_connector.send_message.side_effect = VestaboardError("API error")
+    response = client.post("/message/local", json={"message": test_message})
+    assert response.status_code == 502
+    assert "Error sending message: Error communicating with Vestaboard." in response.json()["detail"]
+
+def test_post_message_local_unexpected_error(client: TestClient, mock_vestaboard_connector: AsyncMock):
+    """Tests handling of unexpected errors during local message posting."""
+    test_message = "Unexpected error test local"
+    mock_vestaboard_connector.send_message.side_effect = Exception("Something broke")
+    response = client.post("/message/local", json={"message": test_message})
+    assert response.status_code == 500
+    assert "Error sending message: An unexpected internal error occurred." in response.json()["detail"]
+
+
 # --- Tests for POST /games/boggle endpoint ---
 @pytest.mark.parametrize("size", [4, 5])
 @patch("app.main.bg.generate_boggle_grids") # Patch where it's used
