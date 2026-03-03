@@ -13,6 +13,12 @@ log = logging.getLogger(__name__)
 
 _connection_pool = None
 
+ALLOWED_TABLES = {
+    "sfw_quotes": {"id", "quote", "source"},
+    "nsfw_quotes": {"id", "quote", "source"},
+    "art": {"id", "art_data", "title"},
+}
+
 def init_db_pool(settings: Settings):
     """Initializes the MySQL connection pool."""
     global _connection_pool
@@ -111,6 +117,11 @@ def _db_connection(settings: Settings):
 
 def _fetch_column_from_table(table_name: str, column_name: str, settings: Settings) -> str | None:
     """Fetches a random value from a given table and column using a managed DB connection."""
+    if table_name not in ALLOWED_TABLES:
+        raise ValueError(f"Invalid table name: {table_name}")
+    if column_name not in ALLOWED_TABLES[table_name]:
+        raise ValueError(f"Invalid column name: {column_name}")
+
     try:
         with _db_connection(settings) as cnx:
             with cnx.cursor() as cur:
@@ -134,6 +145,12 @@ def _fetch_column_from_table(table_name: str, column_name: str, settings: Settin
 
 def _fetch_random_row(table_name: str, columns: list[str], settings: Settings) -> tuple | None:
     """Fetches a random row for specific columns from a given table."""
+    if table_name not in ALLOWED_TABLES:
+        raise ValueError(f"Invalid table name: {table_name}")
+    for column_name in columns:
+        if column_name not in ALLOWED_TABLES[table_name]:
+            raise ValueError(f"Invalid column name: {column_name}")
+
     try:
         with _db_connection(settings) as cnx:
             with cnx.cursor() as cur:

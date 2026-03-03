@@ -3,7 +3,7 @@ from unittest.mock import patch, MagicMock
 import mysql.connector
 import json
 
-from app.sayings.sayings import GetSingleRandSfwS, GetSingleRandNsfwS, GetSingleRandArt, init_db_pool, close_db_pool
+from app.sayings.sayings import GetSingleRandSfwS, GetSingleRandNsfwS, GetSingleRandArt, init_db_pool, close_db_pool, _fetch_column_from_table, _fetch_random_row
 import app.sayings.sayings as say
 from app.config import Settings
 
@@ -88,6 +88,23 @@ class TestSayingFunctions:
 
         with pytest.raises(ConnectionError, match="Database query failed"):
             saying_function(settings=mock_settings_db_enabled)
+
+class TestSayingsValidation:
+    def test_fetch_column_invalid_table(self, mock_settings_db_enabled):
+        with pytest.raises(ValueError, match="Invalid table name: invalid_table"):
+            _fetch_column_from_table("invalid_table", "quote", mock_settings_db_enabled)
+
+    def test_fetch_column_invalid_column(self, mock_settings_db_enabled):
+        with pytest.raises(ValueError, match="Invalid column name: invalid_column"):
+            _fetch_column_from_table("sfw_quotes", "invalid_column", mock_settings_db_enabled)
+
+    def test_fetch_random_row_invalid_table(self, mock_settings_db_enabled):
+        with pytest.raises(ValueError, match="Invalid table name: invalid_table"):
+            _fetch_random_row("invalid_table", ["quote"], mock_settings_db_enabled)
+
+    def test_fetch_random_row_invalid_column(self, mock_settings_db_enabled):
+        with pytest.raises(ValueError, match="Invalid column name: invalid_column"):
+            _fetch_random_row("sfw_quotes", ["quote", "invalid_column"], mock_settings_db_enabled)
 
 class TestPoolFunctions:
     @patch("app.sayings.sayings.pooling.MySQLConnectionPool")
