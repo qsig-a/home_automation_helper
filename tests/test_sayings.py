@@ -3,7 +3,8 @@ from unittest.mock import patch, MagicMock
 import mysql.connector
 import json
 
-from app.sayings.sayings import GetSingleRandSfwS, GetSingleRandNsfwS, GetSingleRandArt
+from app.sayings.sayings import GetSingleRandSfwS, GetSingleRandNsfwS, GetSingleRandArt, init_db_pool, close_db_pool
+import app.sayings.sayings as say
 from app.config import Settings
 
 @pytest.fixture
@@ -87,6 +88,39 @@ class TestSayingFunctions:
 
         with pytest.raises(ConnectionError, match="Database query failed"):
             saying_function(settings=mock_settings_db_enabled)
+
+class TestPoolFunctions:
+    @patch("app.sayings.sayings.pooling.MySQLConnectionPool")
+    def test_init_db_pool_enabled(self, mock_pool, mock_settings_db_enabled):
+        say._connection_pool = None
+        init_db_pool(mock_settings_db_enabled)
+        mock_pool.assert_called_once_with(
+            pool_name="sayings_pool",
+            pool_size=5,
+            pool_reset_session=True,
+            user=mock_settings_db_enabled.saying_db_user,
+            password=mock_settings_db_enabled.saying_db_pass,
+            host=mock_settings_db_enabled.saying_db_host,
+            port=mock_settings_db_enabled.saying_db_port,
+            database=mock_settings_db_enabled.saying_db_name,
+            connection_timeout=5
+        )
+        assert say._connection_pool is not None
+
+    @patch("app.sayings.sayings.pooling.MySQLConnectionPool")
+    def test_init_db_pool_disabled(self, mock_pool, mock_settings_db_disabled):
+        say._connection_pool = None
+        init_db_pool(mock_settings_db_disabled)
+        mock_pool.assert_not_called()
+        assert say._connection_pool is None
+
+    @patch("app.sayings.sayings.pooling.MySQLConnectionPool")
+    def test_close_db_pool(self, mock_pool, mock_settings_db_enabled):
+        say._connection_pool = None
+        init_db_pool(mock_settings_db_enabled)
+        assert say._connection_pool is not None
+        close_db_pool()
+        assert say._connection_pool is None
 
 class TestArtFunctions:
     def test_db_disabled(self, mock_settings_db_disabled):
