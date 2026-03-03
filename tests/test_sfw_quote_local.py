@@ -3,6 +3,7 @@ from unittest.mock import patch, AsyncMock
 from fastapi.testclient import TestClient
 from app.config import Settings
 from fastapi import HTTPException
+from app.main import ActionConfig
 
 @pytest.mark.parametrize(
     "endpoint_path, strategy, step_interval_ms, step_size",
@@ -35,11 +36,13 @@ def test_get_sfw_quote_local_success(
     import app.sayings.sayings as say
     mock_get_and_send_quote.assert_called_once_with(
         quote_func=say.GetSingleRandSfwS,
-        success_message="Random SFW quote queued (Local)",
-        error_message="Error getting SFW quote",
+        config=ActionConfig(
+            success_message="Random SFW quote queued (Local)",
+            error_message="Error getting SFW quote",
+            source='local'
+        ),
         settings=mock_settings,
         connector=mock_vestaboard_connector,
-        source='local',
         strategy=strategy,
         step_interval_ms=step_interval_ms,
         step_size=step_size
