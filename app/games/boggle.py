@@ -56,44 +56,42 @@ END_ROW_5x5: List[int] = [5,0,0,0,0,0,0,66,66,66,66,66,66,66,0,0,0,0,34,48,27,27
 BOGGLE_CONFIG: Dict[int, Dict[str, Any]] = {
     4: {
         "dice": BOGGLE_DICE_4x4,
+        "dice_int": [[ord(c.lower()) - ASCII_LOWERCASE_OFFSET for c in die] for die in BOGGLE_DICE_4x4],
         "begin_row": BEGIN_ROW_4x4,
         "mid_rows": MID_ROWS_TEMPLATE_4x4,
+        "placeholders": [(r, c) for r, row in enumerate(MID_ROWS_TEMPLATE_4x4) for c, cell in enumerate(row) if cell == LETTER_PLACEHOLDER],
         "end_row": END_ROW_4x4
     },
     5: {
         "dice": BOGGLE_DICE_5x5,
+        "dice_int": [[ord(c.lower()) - ASCII_LOWERCASE_OFFSET for c in die] for die in BOGGLE_DICE_5x5],
         "begin_row": None, # No separate begin row for 5x5 in original logic
         "mid_rows": MID_ROWS_TEMPLATE_5x5,
+        "placeholders": [(r, c) for r, row in enumerate(MID_ROWS_TEMPLATE_5x5) for c, cell in enumerate(row) if cell == LETTER_PLACEHOLDER],
         "end_row": END_ROW_5x5
     }
 }
 
-def _roll_dice_and_get_letters(dice_set: List[List[str]]) -> List[int]:
+def _roll_dice_and_get_letters(dice_set_int: List[List[int]]) -> List[int]:
     """Rolls the dice and returns a list of letter numbers."""
-    shuffled_dice = dice_set[:]
+    shuffled_dice = dice_set_int[:]
     shuffle(shuffled_dice)
-    letters = [choice(die) for die in shuffled_dice]
-    return [ord(letter.lower()) - ASCII_LOWERCASE_OFFSET for letter in letters]
+    return [choice(die) for die in shuffled_dice]
 
-def _populate_grid(template: List[List[int]], letters: List[int]) -> List[List[int]]:
+def _populate_grid(template: List[List[int]], letters: List[int], placeholders: List[Tuple[int, int]]) -> List[List[int]]:
     """Populates a grid template with letters."""
     # ⚡ Bolt: Using list comprehension instead of deepcopy for performance
     populated_grid = [row[:] for row in template]
     shuffled_letters = letters[:]
     shuffle(shuffled_letters)
 
-    letter_idx = 0
-    for r_idx, row in enumerate(populated_grid):
-        for c_idx, cell in enumerate(row):
-            if cell == LETTER_PLACEHOLDER:
-                if letter_idx < len(shuffled_letters):
-                    populated_grid[r_idx][c_idx] = shuffled_letters[letter_idx]
-                    letter_idx += 1
-                else:
-                    raise RuntimeError("Not enough letters for placeholders.")
-    
-    if letter_idx != len(shuffled_letters):
+    if len(shuffled_letters) < len(placeholders):
+        raise RuntimeError("Not enough letters for placeholders.")
+    if len(shuffled_letters) > len(placeholders):
         raise RuntimeError("More letters than placeholders.")
+
+    for i, (r, c) in enumerate(placeholders):
+        populated_grid[r][c] = shuffled_letters[i]
 
     return populated_grid
 
@@ -115,8 +113,9 @@ def generate_boggle_grids(size: int) -> Tuple[List[List[int]], List[List[int]]]:
         raise ValueError(f"Unsupported Boggle size: {size}.")
 
     config = BOGGLE_CONFIG[size]
-    letter_numbers = _roll_dice_and_get_letters(config["dice"])
-    populated_mid_rows = _populate_grid(config["mid_rows"], letter_numbers)
+    # ⚡ Bolt: Use precomputed integer dice and placeholder coordinates for O(1) lookups
+    letter_numbers = _roll_dice_and_get_letters(config["dice_int"])
+    populated_mid_rows = _populate_grid(config["mid_rows"], letter_numbers, config["placeholders"])
 
     start_grid: List[List[int]] = []
     # ⚡ Bolt: Using slice [:] instead of deepcopy for performance
