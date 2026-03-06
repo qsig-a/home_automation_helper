@@ -5,3 +5,7 @@
 ## 2024-03-05 - Precomputing Game Board Coordinates
 **Learning:** The legacy codebase for `generate_boggle_grids` was looping through a 6x22 Vestaboard grid to find the placeholder cells for dice letters every time a Boggle game started. It was also converting string dice representations (`"A"`) to integer codes dynamically on each generation. This was creating an O(R×C) search pattern and redundant `ord()` conversions for every game initialization.
 **Action:** Move static grid configuration into pre-computed module-level state. Pre-calculate the dice integers `[[ord(c.lower()) - offset ...]]` and the placeholder grid coordinates `[(r, c) ...]` at import time, reducing `generate_boggle_grids` to an O(N) assignment operation where N is the number of dice.
+
+## 2024-03-05 - Method Lookup Overhead in Python Loops
+**Learning:** Python has measurable overhead for method lookups (like `dict.get()`) when called in tight loops. In `app/connectors/vestaboard.py`'s text-to-array conversion, calling `CHAR_CODE_MAP.get(char, 0)` for every character in a message was causing unnecessary slowdowns.
+**Action:** Pull frequently used methods or properties out of the loop into local variables (e.g., `get_code = CHAR_CODE_MAP.get`) and call the local variable directly. This structural refactoring, along with condensing bounds-checking logic, can yield >50% performance improvements in string parsing algorithms.
