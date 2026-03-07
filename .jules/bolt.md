@@ -9,3 +9,11 @@
 ## 2024-03-05 - Method Lookup Overhead in Python Loops
 **Learning:** Python has measurable overhead for method lookups (like `dict.get()`) when called in tight loops. In `app/connectors/vestaboard.py`'s text-to-array conversion, calling `CHAR_CODE_MAP.get(char, 0)` for every character in a message was causing unnecessary slowdowns.
 **Action:** Pull frequently used methods or properties out of the loop into local variables (e.g., `get_code = CHAR_CODE_MAP.get`) and call the local variable directly. This structural refactoring, along with condensing bounds-checking logic, can yield >50% performance improvements in string parsing algorithms.
+
+## 2024-03-05 - Avoid Manual Coordinate Tracking in Python Loops
+**Learning:** The `convert_text_to_array` method maintained an explicit `row` and `col` coordinate variable while iterating through each character. These manual loop invariants and explicit coordinate checks for bounds (like `row >= 6`) incur a high overhead per iteration. Re-writing string parsing to leverage Python's optimized list slicing, comprehensions, and `.extend()` methods is significantly faster.
+**Action:** Replace `for char in string:` iterations that manually track X/Y grids with line splits (`split('\n')`) and chunking comprehensions (`codes[i:i+22]`). This shifts the heavy lifting from Python bytecode to C-level list operations.
+
+## 2024-03-05 - Bounded O(1) String Processing
+**Learning:** When attempting to optimize Python loop bottlenecks with list comprehensions and generator patterns like `text.split('\n')`, it is critical to observe algorithmic complexity bounds. The original `convert_text_to_array` implementation maintained O(1) complexity relative to the input text length because it broke out early after parsing 132 characters (6 rows × 22 cols). The naïve "optimization" of splitting lines broke this bound, causing it to eagerly scan and allocate O(N) memory for arbitrarily large input strings before throwing it away.
+**Action:** Always maintain early exit conditions. For finite buffers like a Vestaboard grid, pre-allocate a fixed-size 1D array (`codes = [0] * 132`) and manage a single pointer (`idx`). This preserves the strict O(1) early exit while eliminating multi-dimensional coordinate tracking overhead.
