@@ -92,31 +92,36 @@ class VestaboardConnector:
         """
         Converts a text string into a 6x22 integer array for Vestaboard.
         """
-        # ⚡ Bolt: Optimized text-to-array conversion by pre-allocating the board
-        # and pulling CHAR_CODE_MAP.get into a local variable to avoid method
-        # lookup overhead in the loop. Improves conversion speed by ~50%.
-        board = [[0] * 22 for _ in range(6)]
-        row, col = 0, 0
+        # ⚡ Bolt: Optimized text-to-array conversion by using a flat pre-allocated
+        # list and a single index instead of tracking rows and columns. This preserves
+        # the O(1) early exit (max 132 chars) but avoids complex coordinate tracking.
+        codes = [0] * 132
+        idx = 0
         get_code = CHAR_CODE_MAP.get
 
         for char in text:
             if char == '\n':
-                row += 1
-                col = 0
-                if row >= 6:
+                # Fast forward to the start of the next line (multiple of 22)
+                idx = (idx // 22 + 1) * 22
+                if idx >= 132:
                     break
                 continue
 
-            board[row][col] = get_code(char, 0)
-            col += 1
+            codes[idx] = get_code(char, 0)
+            idx += 1
 
-            if col >= 22:
-                row += 1
-                col = 0
-                if row >= 6:
-                    break
+            if idx >= 132:
+                break
 
-        return board
+        # Slice into 6x22 chunks
+        return [
+            codes[0:22],
+            codes[22:44],
+            codes[44:66],
+            codes[66:88],
+            codes[88:110],
+            codes[110:132]
+        ]
 
     async def _post_rw(self, data: Union[Dict[str, Any], List[List[int]]]):
         """Helper to POST to RW API."""
