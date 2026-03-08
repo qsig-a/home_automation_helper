@@ -74,36 +74,30 @@ BOGGLE_CONFIG: Dict[int, Dict[str, Any]] = {
 
 def _roll_dice_and_get_letters(dice_set_int: List[List[int]]) -> List[int]:
     """Rolls the dice and returns a list of letter numbers."""
-    shuffled_dice = dice_set_int[:]
-    shuffle(shuffled_dice)
-    return [choice(die) for die in shuffled_dice]
+    return [choice(die) for die in dice_set_int]
 
 def _populate_grid(template: List[List[int]], letters: List[int], placeholders: List[Tuple[int, int]]) -> List[List[int]]:
     """Populates a grid template with letters."""
     # ⚡ Bolt: Using list comprehension instead of deepcopy for performance
     populated_grid = [row[:] for row in template]
-    shuffled_letters = letters[:]
-    shuffle(shuffled_letters)
 
-    if len(shuffled_letters) < len(placeholders):
+    if len(letters) < len(placeholders):
         raise RuntimeError("Not enough letters for placeholders.")
-    if len(shuffled_letters) > len(placeholders):
+    if len(letters) > len(placeholders):
         raise RuntimeError("More letters than placeholders.")
 
+    # ⚡ Bolt: letters is already a uniquely generated list from _roll_dice_and_get_letters, modify in-place
+    shuffle(letters)
+
     for i, (r, c) in enumerate(placeholders):
-        populated_grid[r][c] = shuffled_letters[i]
+        populated_grid[r][c] = letters[i]
 
     return populated_grid
 
 def _create_end_grid(start_grid: List[List[int]]) -> List[List[int]]:
     """Creates the end grid by modifying boundary markers."""
-    # ⚡ Bolt: Using list comprehension instead of deepcopy for performance
-    end_grid = [row[:] for row in start_grid]
-    for row in end_grid:
-        for i, cell in enumerate(row):
-            if cell == BOUNDARY_START:
-                row[i] = BOUNDARY_END
-    return end_grid
+    # ⚡ Bolt: Using nested list comprehension for C-speed iteration, replacing Python for loops
+    return [[BOUNDARY_END if cell == BOUNDARY_START else cell for cell in row] for row in start_grid]
 
 def generate_boggle_grids(size: int) -> Tuple[List[List[int]], List[List[int]]]:
     """

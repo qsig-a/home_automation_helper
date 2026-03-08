@@ -1,5 +1,4 @@
 import time
-import asyncio
 from unittest.mock import MagicMock
 from app.config import get_settings
 import app.sayings.sayings

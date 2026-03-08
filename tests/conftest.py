@@ -1,7 +1,7 @@
 # tests/conftest.py - Shared fixtures for pytest
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 from app.main import app, get_settings, get_vestaboard_connector # Import the dependency functions
 from app.config import Settings
