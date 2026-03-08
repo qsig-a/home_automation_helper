@@ -1,21 +1,14 @@
 import pytest
-import pytest_asyncio
 import asyncio # Added import for asyncio
-from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from unittest.mock import AsyncMock, patch, MagicMock
 
-from app.main import app
 from app.config import Settings
 from app.connectors.vestaboard import (
-    VestaboardConnector,
     VestaboardError,
     VestaboardAuthError,
     VestaboardInvalidCharsError
 )
-from app.models import MessageClass, BoggleClass
-import app.sayings.sayings as say
-import app.games.boggle as bg
 
 # Basic test to ensure the file is created and pytest can find it
 def test_initial_setup():
