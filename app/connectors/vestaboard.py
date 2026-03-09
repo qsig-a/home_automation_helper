@@ -41,6 +41,14 @@ CHAR_CODE_MAP = {
     ';': 49, ':': 50, "'": 52, '"': 53, '%': 54, ',': 55, '.': 56, '/': 59, '?': 60, '°': 62
 }
 
+# ⚡ Bolt: Precomputed lookup array for converting byte values directly to Vestaboard
+# character codes. Indexed by the character's ord() value, drastically reducing method
+# lookup overhead in loops from O(1) hashing to direct array access.
+_CHAR_CODE_ARRAY = [0] * 256
+for char, code in CHAR_CODE_MAP.items():
+    if ord(char) < 256:
+        _CHAR_CODE_ARRAY[ord(char)] = code
+
 class VestaboardConnector:
     """
     An asynchronous connector for interacting with the Vestaboard API.
@@ -95,9 +103,11 @@ class VestaboardConnector:
         # ⚡ Bolt: Optimized text-to-array conversion by using a flat pre-allocated
         # list and a single index instead of tracking rows and columns. This preserves
         # the O(1) early exit (max 132 chars) but avoids complex coordinate tracking.
+        # By using a direct array lookup `_CHAR_CODE_ARRAY[ord(char)]` for ASCII/Latin-1
+        # characters, we bypass dictionary hashing completely and maintain peak performance,
+        # while safely falling back to 0 (space) for unsupported unicode characters.
         codes = [0] * 132
         idx = 0
-        get_code = CHAR_CODE_MAP.get
 
         for char in text:
             if char == '\n':
@@ -107,13 +117,14 @@ class VestaboardConnector:
                     break
                 continue
 
-            codes[idx] = get_code(char, 0)
+            o = ord(char)
+            codes[idx] = _CHAR_CODE_ARRAY[o] if o < 256 else 0
             idx += 1
 
             if idx >= 132:
                 break
 
-        # Slice into 6x22 chunks
+        # Slice into 6x22 chunks (Python C-level list slicing is incredibly fast)
         return [
             codes[0:22],
             codes[22:44],
