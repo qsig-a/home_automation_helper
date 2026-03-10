@@ -117,31 +117,14 @@ def _db_connection(settings: Settings):
 
 def _fetch_column_from_table(table_name: str, column_name: str, settings: Settings) -> str | None:
     """Fetches a random value from a given table and column using a managed DB connection."""
-    if table_name not in ALLOWED_TABLES:
-        raise ValueError(f"Invalid table name: {table_name}")
-    if column_name not in ALLOWED_TABLES[table_name]:
-        raise ValueError(f"Invalid column name: {column_name}")
+    result = _fetch_random_row(table_name, [column_name], settings)
 
-    try:
-        with _db_connection(settings) as cnx:
-            with cnx.cursor() as cur:
-                # Using f-string safely as table_name and column_name come from trusted internal calls
-                # Optimized approach: avoid full table scan by using an inner join on a random ID
-                query = f'SELECT t1.{column_name} FROM {table_name} AS t1 JOIN (SELECT id FROM {table_name} WHERE id >= (SELECT FLOOR(RAND() * (MAX(id) - MIN(id) + 1)) + MIN(id) FROM {table_name}) ORDER BY id LIMIT 1) AS t2 ON t1.id = t2.id'
-                log.debug(f"Executing query: {query}")
-                cur.execute(query)
-                result = cur.fetchone()
-
-                if result and result[0] is not None:
-                    log.debug(f"Value found in {table_name}.{column_name}.")
-                    return str(result[0])
-                else:
-                    log.warning(f"No value found in table {table_name} or result was NULL.")
-                    return None
-    except mysql.connector.Error as err:
-        log.error(f"Database query error in {table_name}: {err}")
-        # Propagate as a standard error for the caller to handle
-        raise ConnectionError(f"Database query failed for {table_name}") from err
+    if result and result[0] is not None:
+        log.debug(f"Value found in {table_name}.{column_name}.")
+        return str(result[0])
+    else:
+        log.warning(f"No value found in table {table_name} or result was NULL.")
+        return None
 
 def _fetch_random_row(table_name: str, columns: list[str], settings: Settings) -> tuple | None:
     """Fetches a random row for specific columns from a given table."""
