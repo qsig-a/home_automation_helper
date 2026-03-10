@@ -17,8 +17,6 @@ def mock_settings() -> Settings:
     settings = Settings()
     # Default to DB being disabled for most tests unless overridden
     settings.saying_db_enable = "0"
-    settings.vestaboard_api_key = "test_api_key"
-    settings.vestaboard_api_secret = "test_api_secret"
     return settings
 
 
