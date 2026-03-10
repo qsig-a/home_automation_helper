@@ -81,37 +81,40 @@ async def test_send_array_local_with_options(real_settings):
     assert payload['characters'] == chars
 
 @pytest.mark.asyncio
-async def test_post_local_http_error(real_settings):
+async def test_post_rw_http_error(real_settings):
+    import httpx
+    from app.connectors.vestaboard import VestaboardError
+
     connector = VestaboardConnector(real_settings)
 
-    mock_request = httpx.Request("POST", "http://test")
-    mock_response = httpx.Response(400, request=mock_request, text="Bad Request")
+    # Create a mock response with an error status
+    mock_response = httpx.Response(status_code=400, request=httpx.Request("POST", "/"), text="Bad Request")
 
-    connector._local_client.post = AsyncMock(side_effect=httpx.HTTPStatusError(
-        "400 Bad Request", request=mock_request, response=mock_response
+    # Mock the client's post method to raise an HTTPStatusError
+    connector._rw_client.post = AsyncMock(side_effect=httpx.HTTPStatusError(
+        "Error", request=mock_response.request, response=mock_response
     ))
 
-    with pytest.raises(VestaboardError, match="Local API error: 400"):
-        await connector._post_local([[]])
+    with pytest.raises(VestaboardError) as exc_info:
+        await connector._post_rw({"text": "Test Error"})
+
+    assert "RW API error: 400" in str(exc_info.value)
+    connector._rw_client.post.assert_called_once()
 
 @pytest.mark.asyncio
-async def test_post_local_request_error(real_settings):
+async def test_post_rw_request_error(real_settings):
+    import httpx
+    from app.connectors.vestaboard import VestaboardError
+
     connector = VestaboardConnector(real_settings)
 
-    mock_request = httpx.Request("POST", "http://test")
-    connector._local_client.post = AsyncMock(side_effect=httpx.RequestError(
-        "Network Error", request=mock_request
+    # Mock the client's post method to raise a RequestError
+    connector._rw_client.post = AsyncMock(side_effect=httpx.RequestError(
+        "Network Unreachable", request=httpx.Request("POST", "/")
     ))
 
-    with pytest.raises(VestaboardError, match="Local API network error: Network Error"):
-        await connector._post_local([[]])
+    with pytest.raises(VestaboardError) as exc_info:
+        await connector._post_rw({"text": "Test Network Error"})
 
-@pytest.mark.asyncio
-async def test_post_local_auth_error():
-    settings = Settings()
-    settings.vestaboard_rw_api_key = "rw_key"
-    settings.vestaboard_local_api_ip = "" # No IP
-
-    connector = VestaboardConnector(settings)
-    with pytest.raises(VestaboardAuthError, match=r"Local API not configured \(Key or IP missing\)."):
-        await connector._post_local([[]])
+    assert "RW API network error: Network Unreachable" in str(exc_info.value)
+    connector._rw_client.post.assert_called_once()

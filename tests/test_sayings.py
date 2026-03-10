@@ -139,6 +139,15 @@ class TestPoolFunctions:
         close_db_pool()
         assert say._connection_pool is None
 
+    @patch("app.sayings.sayings.pooling.MySQLConnectionPool")
+    @patch("app.sayings.sayings.log.error")
+    def test_init_db_pool_mysql_error(self, mock_log_error, mock_pool, mock_settings_db_enabled):
+        mock_pool.side_effect = mysql.connector.Error("Simulated pool initialization error")
+        say._connection_pool = None
+        init_db_pool(mock_settings_db_enabled)
+        mock_log_error.assert_called_once_with("Error initializing connection pool: Simulated pool initialization error")
+        assert say._connection_pool is None
+
 class TestArtFunctions:
     def test_db_disabled(self, mock_settings_db_disabled):
         with patch("app.sayings.sayings._fetch_random_row") as mock_fetch:
