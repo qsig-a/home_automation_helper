@@ -187,7 +187,7 @@ def GetSingleRandNsfwS(settings: Settings) -> str | None: # Reverted
          return None # Or raise an exception if preferred
     return _fetch_column_from_table("nsfw_quotes", "quote", settings)
 
-def GetSingleRandArt(settings: Settings) -> tuple[list, str] | None:
+def GetSingleRandArt(settings: Settings) -> tuple[list[list[int]], str] | None:
     """
     Gets a random Art array and title using provided application settings.
     Returns a tuple (art_data, title) or None if not found or on error.
