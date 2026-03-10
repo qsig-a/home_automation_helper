@@ -1,6 +1,7 @@
 import pytest
+import httpx
 from unittest.mock import AsyncMock
-from app.connectors.vestaboard import VestaboardConnector
+from app.connectors.vestaboard import VestaboardConnector, VestaboardError, VestaboardAuthError
 from app.config import Settings
 
 @pytest.fixture
