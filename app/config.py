@@ -9,8 +9,6 @@ class Settings(BaseSettings):
     saying_db_port: Optional[int] = 3306
     saying_db_name: Optional[str] = None
     saying_db_enable: str = "0" # Default to disabled
-    vestaboard_api_key: Optional[str] = None
-    vestaboard_api_secret: Optional[str] = None
     vestaboard_rw_api_key: Optional[str] = None
     vestaboard_local_api_key: Optional[str] = None
     vestaboard_local_api_ip: Optional[str] = None
