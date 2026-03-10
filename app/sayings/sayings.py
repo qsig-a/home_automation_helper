@@ -12,6 +12,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 log = logging.getLogger(__name__)
 
 _connection_pool = None
+_db_configured_cache = None
 
 ALLOWED_TABLES = {
     "sfw_quotes": {"id", "quote", "source"},
@@ -21,19 +22,21 @@ ALLOWED_TABLES = {
 
 def init_db_pool(settings: Settings):
     """Initializes the MySQL connection pool."""
-    global _connection_pool
+    global _connection_pool, _db_configured_cache
     if settings.saying_db_enable != "1":
         log.info("Database disabled, not initializing connection pool.")
         return
 
-    required_settings = [
-        settings.saying_db_user,
-        settings.saying_db_pass,
-        settings.saying_db_host,
-        settings.saying_db_port,
-        settings.saying_db_name
-    ]
-    if not all(required_settings):
+    if _db_configured_cache is None:
+        _db_configured_cache = bool(
+            settings.saying_db_user and
+            settings.saying_db_pass and
+            settings.saying_db_host and
+            settings.saying_db_port and
+            settings.saying_db_name
+        )
+
+    if not _db_configured_cache:
         log.error("Database configuration is incomplete, cannot initialize pool.")
         return
 
@@ -67,19 +70,22 @@ def close_db_pool():
 @contextmanager
 def _db_connection(settings: Settings):
     """A context manager for a MySQL database connection that handles setup and teardown."""
+    global _connection_pool, _db_configured_cache
+
     # Check if essential DB configuration is present
-    required_settings = [
-        settings.saying_db_user,
-        settings.saying_db_pass,
-        settings.saying_db_host,
-        settings.saying_db_port,
-        settings.saying_db_name
-    ]
-    if not all(required_settings):
+    if _db_configured_cache is None:
+        _db_configured_cache = bool(
+            settings.saying_db_user and
+            settings.saying_db_pass and
+            settings.saying_db_host and
+            settings.saying_db_port and
+            settings.saying_db_name
+        )
+
+    if not _db_configured_cache:
         log.error("Database configuration is incomplete.")
         raise ConnectionError("Database configuration is incomplete.")
 
-    global _connection_pool
     cnx = None
 
     try:
