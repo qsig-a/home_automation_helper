@@ -205,8 +205,13 @@ class VestaboardConnector:
             # Local API supports transitions
 
             # Check if any transition params are present
-            transition_keys = ['strategy', 'step_interval_ms', 'step_size']
-            has_options = any(k in kwargs and kwargs[k] is not None for k in transition_keys)
+            # ⚡ Bolt: Explicit boolean condition using .get() avoids generator expression
+            # overhead and dict key exception checks, improving performance.
+            has_options = (
+                kwargs.get('strategy') is not None or
+                kwargs.get('step_interval_ms') is not None or
+                kwargs.get('step_size') is not None
+            )
 
             if has_options:
                 payload = {"characters": characters}
