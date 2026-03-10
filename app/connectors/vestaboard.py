@@ -44,10 +44,11 @@ CHAR_CODE_MAP = {
 # ⚡ Bolt: Precomputed lookup array for converting byte values directly to Vestaboard
 # character codes. Indexed by the character's ord() value, drastically reducing method
 # lookup overhead in loops from O(1) hashing to direct array access.
-_CHAR_CODE_ARRAY = [0] * 256
+_char_code_list = [0] * 256
 for char, code in CHAR_CODE_MAP.items():
     if ord(char) < 256:
-        _CHAR_CODE_ARRAY[ord(char)] = code
+        _char_code_list[ord(char)] = code
+_CHAR_CODE_ARRAY = tuple(_char_code_list)
 
 class VestaboardConnector:
     """
