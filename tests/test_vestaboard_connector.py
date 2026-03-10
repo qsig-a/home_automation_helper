@@ -1,6 +1,7 @@
 import pytest
+import httpx
 from unittest.mock import AsyncMock
-from app.connectors.vestaboard import VestaboardConnector
+from app.connectors.vestaboard import VestaboardConnector, VestaboardError, VestaboardAuthError
 from app.config import Settings
 
 @pytest.fixture
@@ -78,3 +79,39 @@ async def test_send_array_local_with_options(real_settings):
     assert payload['strategy'] == "column"
     assert payload['step_size'] == 2
     assert payload['characters'] == chars
+
+@pytest.mark.asyncio
+async def test_post_local_http_error(real_settings):
+    connector = VestaboardConnector(real_settings)
+
+    mock_request = httpx.Request("POST", "http://test")
+    mock_response = httpx.Response(400, request=mock_request, text="Bad Request")
+
+    connector._local_client.post = AsyncMock(side_effect=httpx.HTTPStatusError(
+        "400 Bad Request", request=mock_request, response=mock_response
+    ))
+
+    with pytest.raises(VestaboardError, match="Local API error: 400"):
+        await connector._post_local([[]])
+
+@pytest.mark.asyncio
+async def test_post_local_request_error(real_settings):
+    connector = VestaboardConnector(real_settings)
+
+    mock_request = httpx.Request("POST", "http://test")
+    connector._local_client.post = AsyncMock(side_effect=httpx.RequestError(
+        "Network Error", request=mock_request
+    ))
+
+    with pytest.raises(VestaboardError, match="Local API network error: Network Error"):
+        await connector._post_local([[]])
+
+@pytest.mark.asyncio
+async def test_post_local_auth_error():
+    settings = Settings()
+    settings.vestaboard_rw_api_key = "rw_key"
+    settings.vestaboard_local_api_ip = "" # No IP
+
+    connector = VestaboardConnector(settings)
+    with pytest.raises(VestaboardAuthError, match=r"Local API not configured \(Key or IP missing\)."):
+        await connector._post_local([[]])
