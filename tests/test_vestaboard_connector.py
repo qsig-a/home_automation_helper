@@ -1,6 +1,7 @@
 import pytest
+import httpx
 from unittest.mock import AsyncMock
-from app.connectors.vestaboard import VestaboardConnector
+from app.connectors.vestaboard import VestaboardConnector, VestaboardError, VestaboardAuthError
 from app.config import Settings
 
 @pytest.fixture
@@ -78,3 +79,42 @@ async def test_send_array_local_with_options(real_settings):
     assert payload['strategy'] == "column"
     assert payload['step_size'] == 2
     assert payload['characters'] == chars
+
+@pytest.mark.asyncio
+async def test_post_rw_http_error(real_settings):
+    import httpx
+    from app.connectors.vestaboard import VestaboardError
+
+    connector = VestaboardConnector(real_settings)
+
+    # Create a mock response with an error status
+    mock_response = httpx.Response(status_code=400, request=httpx.Request("POST", "/"), text="Bad Request")
+
+    # Mock the client's post method to raise an HTTPStatusError
+    connector._rw_client.post = AsyncMock(side_effect=httpx.HTTPStatusError(
+        "Error", request=mock_response.request, response=mock_response
+    ))
+
+    with pytest.raises(VestaboardError) as exc_info:
+        await connector._post_rw({"text": "Test Error"})
+
+    assert "RW API error: 400" in str(exc_info.value)
+    connector._rw_client.post.assert_called_once()
+
+@pytest.mark.asyncio
+async def test_post_rw_request_error(real_settings):
+    import httpx
+    from app.connectors.vestaboard import VestaboardError
+
+    connector = VestaboardConnector(real_settings)
+
+    # Mock the client's post method to raise a RequestError
+    connector._rw_client.post = AsyncMock(side_effect=httpx.RequestError(
+        "Network Unreachable", request=httpx.Request("POST", "/")
+    ))
+
+    with pytest.raises(VestaboardError) as exc_info:
+        await connector._post_rw({"text": "Test Network Error"})
+
+    assert "RW API network error: Network Unreachable" in str(exc_info.value)
+    connector._rw_client.post.assert_called_once()

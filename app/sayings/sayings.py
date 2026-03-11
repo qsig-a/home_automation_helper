@@ -12,6 +12,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 log = logging.getLogger(__name__)
 
 _connection_pool = None
+_db_configured_cache = None
 
 ALLOWED_TABLES = {
     "sfw_quotes": {"id", "quote", "source"},
@@ -23,19 +24,21 @@ _query_cache: dict[tuple[str, tuple[str, ...]], str] = {}
 
 def init_db_pool(settings: Settings):
     """Initializes the MySQL connection pool."""
-    global _connection_pool
+    global _connection_pool, _db_configured_cache
     if settings.saying_db_enable != "1":
         log.info("Database disabled, not initializing connection pool.")
         return
 
-    required_settings = [
-        settings.saying_db_user,
-        settings.saying_db_pass,
-        settings.saying_db_host,
-        settings.saying_db_port,
-        settings.saying_db_name
-    ]
-    if not all(required_settings):
+    if _db_configured_cache is None:
+        _db_configured_cache = bool(
+            settings.saying_db_user and
+            settings.saying_db_pass and
+            settings.saying_db_host and
+            settings.saying_db_port and
+            settings.saying_db_name
+        )
+
+    if not _db_configured_cache:
         log.error("Database configuration is incomplete, cannot initialize pool.")
         return
 
@@ -69,19 +72,22 @@ def close_db_pool():
 @contextmanager
 def _db_connection(settings: Settings):
     """A context manager for a MySQL database connection that handles setup and teardown."""
+    global _connection_pool, _db_configured_cache
+
     # Check if essential DB configuration is present
-    required_settings = [
-        settings.saying_db_user,
-        settings.saying_db_pass,
-        settings.saying_db_host,
-        settings.saying_db_port,
-        settings.saying_db_name
-    ]
-    if not all(required_settings):
+    if _db_configured_cache is None:
+        _db_configured_cache = bool(
+            settings.saying_db_user and
+            settings.saying_db_pass and
+            settings.saying_db_host and
+            settings.saying_db_port and
+            settings.saying_db_name
+        )
+
+    if not _db_configured_cache:
         log.error("Database configuration is incomplete.")
         raise ConnectionError("Database configuration is incomplete.")
 
-    global _connection_pool
     cnx = None
 
     try:
@@ -119,35 +125,14 @@ def _db_connection(settings: Settings):
 
 def _fetch_column_from_table(table_name: str, column_name: str, settings: Settings) -> str | None:
     """Fetches a random value from a given table and column using a managed DB connection."""
-    cache_key = (table_name, (column_name,))
-    query = _query_cache.get(cache_key)
+    result = _fetch_random_row(table_name, [column_name], settings)
 
-    if not query:
-        if table_name not in ALLOWED_TABLES:
-            raise ValueError(f"Invalid table name: {table_name}")
-        if column_name not in ALLOWED_TABLES[table_name]:
-            raise ValueError(f"Invalid column name: {column_name}")
-        # Optimized approach: avoid full table scan by using an inner join on a random ID
-        query = f'SELECT t1.{column_name} FROM {table_name} AS t1 JOIN (SELECT id FROM {table_name} WHERE id >= (SELECT FLOOR(RAND() * (MAX(id) - MIN(id) + 1)) + MIN(id) FROM {table_name}) ORDER BY id LIMIT 1) AS t2 ON t1.id = t2.id'
-        _query_cache[cache_key] = query
-
-    try:
-        with _db_connection(settings) as cnx:
-            with cnx.cursor() as cur:
-                log.debug(f"Executing query: {query}")
-                cur.execute(query)
-                result = cur.fetchone()
-
-                if result and result[0] is not None:
-                    log.debug(f"Value found in {table_name}.{column_name}.")
-                    return str(result[0])
-                else:
-                    log.warning(f"No value found in table {table_name} or result was NULL.")
-                    return None
-    except mysql.connector.Error as err:
-        log.error(f"Database query error in {table_name}: {err}")
-        # Propagate as a standard error for the caller to handle
-        raise ConnectionError(f"Database query failed for {table_name}") from err
+    if result and result[0] is not None:
+        log.debug(f"Value found in {table_name}.{column_name}.")
+        return str(result[0])
+    else:
+        log.warning(f"No value found in table {table_name} or result was NULL.")
+        return None
 
 def _fetch_random_row(table_name: str, columns: list[str], settings: Settings) -> tuple | None:
     """Fetches a random row for specific columns from a given table."""
@@ -198,7 +183,7 @@ def GetSingleRandNsfwS(settings: Settings) -> str | None: # Reverted
          return None # Or raise an exception if preferred
     return _fetch_column_from_table("nsfw_quotes", "quote", settings)
 
-def GetSingleRandArt(settings: Settings) -> tuple[list, str] | None:
+def GetSingleRandArt(settings: Settings) -> tuple[list[list[int]], str] | None:
     """
     Gets a random Art array and title using provided application settings.
     Returns a tuple (art_data, title) or None if not found or on error.

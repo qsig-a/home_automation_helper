@@ -3,7 +3,7 @@
 import asyncio
 import logging
 from dataclasses import dataclass
-from typing import List, Dict, Callable, Awaitable, TypeVar, Generic
+from typing import List, Dict, Callable, Awaitable, TypeVar, Generic, Any
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends, Request
 from contextlib import asynccontextmanager
@@ -89,32 +89,58 @@ async def handle_vestaboard_action(
         raise HTTPException(status_code=500, detail=f"{error_prefix}: An unexpected internal error occurred.")
 
 
+async def _get_and_send_base(
+    config: ActionConfig[T_Data],
+    settings: Settings,
+    connector: VestaboardConnector,
+    send_method_name: str,
+    process_result: Callable[[T_Data], tuple[Any, Dict[str, str]]],
+    **kwargs
+) -> Dict[str, str]:
+    try:
+        result = await asyncio.to_thread(config.func, settings=settings)
+        if result is None:
+            log.warning(f"{config.error_message}: Function returned None (DB disabled or no data found).")
+            raise HTTPException(status_code=404, detail=f"{config.error_message}: Data not found or DB disabled")
+
+        data, extra_response = process_result(result)
+
+        send_method = getattr(connector, send_method_name)
+        await handle_vestaboard_action(
+            lambda: send_method(data, source=config.source, **kwargs),
+            config.error_message
+        )
+        log.info(f"Successfully sent to board: {config.success_message}")
+
+        response = {"message": config.success_message}
+        response.update(extra_response)
+        return response
+    except HTTPException:
+        raise
+    except ConnectionError as e:
+        log.error(f"Database connection error: {e}", exc_info=True)
+        raise HTTPException(status_code=503, detail=f"{config.error_message}: Database unavailable")
+    except Exception as e:
+        log.exception(f"Unexpected error process: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"{config.error_message}: An unexpected internal error occurred")
+
 async def get_and_send_quote(
     config: ActionConfig[str | None],
     settings: Settings,
     connector: VestaboardConnector,
     **kwargs
 ) -> Dict[str, str]:
-    try:
-        data = await asyncio.to_thread(config.func, settings=settings)
-        if data is None:
-            log.warning(f"{config.error_message}: Quote function returned None (DB disabled or no quote found).")
-            raise HTTPException(status_code=404, detail=f"{config.error_message}: Quote not found or DB disabled")
+    def process_quote(result: str) -> tuple[str, Dict[str, str]]:
+        return result, {}
 
-        await handle_vestaboard_action(
-            lambda: connector.send_message(data, source=config.source, **kwargs),
-            config.error_message
-        )
-        log.info(f"Successfully sent quote to board: {config.success_message}")
-        return {"message": config.success_message}
-    except HTTPException:
-        raise
-    except ConnectionError as e:
-        log.error(f"Database connection error getting quote: {e}", exc_info=True)
-        raise HTTPException(status_code=503, detail=f"{config.error_message}: Database unavailable")
-    except Exception as e:
-        log.exception(f"Unexpected error in quote process: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"{config.error_message}: An unexpected internal error occurred")
+    return await _get_and_send_base(
+        config=config,
+        settings=settings,
+        connector=connector,
+        send_method_name="send_message",
+        process_result=process_quote,
+        **kwargs
+    )
 
 async def get_and_send_art(
     config: ActionConfig[List[List[int]] | tuple[List[List[int]], str] | None],
@@ -122,12 +148,7 @@ async def get_and_send_art(
     connector: VestaboardConnector,
     **kwargs
 ) -> Dict[str, str]:
-    try:
-        result = await asyncio.to_thread(config.func, settings=settings)
-        if result is None:
-            log.warning(f"{config.error_message}: Art function returned None (DB disabled or no art found).")
-            raise HTTPException(status_code=404, detail=f"{config.error_message}: Art not found or DB disabled")
-
+    def process_art(result) -> tuple[List[List[int]], Dict[str, str]]:
         title = "Unknown"
         if isinstance(result, tuple):
             data, fetched_title = result
@@ -135,21 +156,16 @@ async def get_and_send_art(
                 title = fetched_title
         else:
             data = result
+        return data, {"title": title}
 
-        await handle_vestaboard_action(
-            lambda: connector.send_array(data, source=config.source, **kwargs),
-            config.error_message
-        )
-        log.info(f"Successfully sent art to board: {config.success_message}")
-        return {"message": config.success_message, "title": title}
-    except HTTPException:
-        raise
-    except ConnectionError as e:
-        log.error(f"Database connection error getting art: {e}", exc_info=True)
-        raise HTTPException(status_code=503, detail=f"{config.error_message}: Database unavailable")
-    except Exception as e:
-        log.exception(f"Unexpected error in art process: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"{config.error_message}: An unexpected internal error occurred")
+    return await _get_and_send_base(
+        config=config,
+        settings=settings,
+        connector=connector,
+        send_method_name="send_array",
+        process_result=process_art,
+        **kwargs
+    )
 
 
 @app.post("/games/boggle", status_code=202)

@@ -6,7 +6,6 @@ from typing import List, Tuple, Dict, Any
 LETTER_PLACEHOLDER = 1  # Indicates where a rolled letter should be placed
 BOUNDARY_START = 66     # Initial value for boundary cells in the 'start' grid
 BOUNDARY_END = 63       # Value for boundary cells in the 'end' grid
-EMPTY_CELL = 0          # Represents an empty cell in the template
 ASCII_LOWERCASE_OFFSET = 96 # Offset to convert 'a'..'z' to 1..26 (ord('a') - 1)
 
 # --- Boggle Dice Definitions ---

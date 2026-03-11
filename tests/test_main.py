@@ -436,7 +436,7 @@ async def test_get_quote_db_disabled(
     response = client.get(endpoint_path)
     
     assert response.status_code == 404
-    assert f"{expected_error_msg_prefix}: Quote not found or DB disabled" in response.json()["detail"]
+    assert f"{expected_error_msg_prefix}: Data not found or DB disabled" in response.json()["detail"]
 
 
 @pytest.mark.parametrize(
@@ -467,7 +467,7 @@ async def test_get_quote_none_returned(
 
     response = client.get(endpoint_path)
     assert response.status_code == 404
-    assert f"{expected_error_msg_prefix}: Quote not found or DB disabled" in response.json()["detail"]
+    assert f"{expected_error_msg_prefix}: Data not found or DB disabled" in response.json()["detail"]
 
 
 @pytest.mark.parametrize(
