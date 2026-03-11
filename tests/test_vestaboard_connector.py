@@ -1,7 +1,7 @@
 import pytest
 import httpx
 from unittest.mock import AsyncMock
-from app.connectors.vestaboard import VestaboardConnector, VestaboardError, VestaboardAuthError
+from app.connectors.vestaboard import VestaboardConnector, VestaboardError
 from app.config import Settings
 
 @pytest.fixture
@@ -82,8 +82,6 @@ async def test_send_array_local_with_options(real_settings):
 
 @pytest.mark.asyncio
 async def test_post_rw_http_error(real_settings):
-    import httpx
-    from app.connectors.vestaboard import VestaboardError
 
     connector = VestaboardConnector(real_settings)
 
@@ -103,8 +101,6 @@ async def test_post_rw_http_error(real_settings):
 
 @pytest.mark.asyncio
 async def test_post_rw_request_error(real_settings):
-    import httpx
-    from app.connectors.vestaboard import VestaboardError
 
     connector = VestaboardConnector(real_settings)
 
