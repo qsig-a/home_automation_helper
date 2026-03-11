@@ -20,6 +20,8 @@ ALLOWED_TABLES = {
     "art": {"id", "art_data", "title"},
 }
 
+_query_cache: dict[tuple[str, tuple[str, ...]], str] = {}
+
 def init_db_pool(settings: Settings):
     """Initializes the MySQL connection pool."""
     global _connection_pool, _db_configured_cache
@@ -134,19 +136,24 @@ def _fetch_column_from_table(table_name: str, column_name: str, settings: Settin
 
 def _fetch_random_row(table_name: str, columns: list[str], settings: Settings) -> tuple | None:
     """Fetches a random row for specific columns from a given table."""
-    if table_name not in ALLOWED_TABLES:
-        raise ValueError(f"Invalid table name: {table_name}")
-    for column_name in columns:
-        if column_name not in ALLOWED_TABLES[table_name]:
-            raise ValueError(f"Invalid column name: {column_name}")
+    columns_tuple = tuple(columns)
+    cache_key = (table_name, columns_tuple)
+    query = _query_cache.get(cache_key)
+
+    if not query:
+        if table_name not in ALLOWED_TABLES:
+            raise ValueError(f"Invalid table name: {table_name}")
+        for column_name in columns:
+            if column_name not in ALLOWED_TABLES[table_name]:
+                raise ValueError(f"Invalid column name: {column_name}")
+        cols_str = ", ".join([f"t1.{c}" for c in columns])
+        # Optimized approach: avoid full table scan by using an inner join on a random ID
+        query = f'SELECT {cols_str} FROM {table_name} AS t1 JOIN (SELECT id FROM {table_name} WHERE id >= (SELECT FLOOR(RAND() * (MAX(id) - MIN(id) + 1)) + MIN(id) FROM {table_name}) ORDER BY id LIMIT 1) AS t2 ON t1.id = t2.id'
+        _query_cache[cache_key] = query
 
     try:
         with _db_connection(settings) as cnx:
             with cnx.cursor() as cur:
-                cols_str = ", ".join([f"t1.{c}" for c in columns])
-                # Using f-string safely as table_name and columns come from trusted internal calls
-                # Optimized approach: avoid full table scan by using an inner join on a random ID
-                query = f'SELECT {cols_str} FROM {table_name} AS t1 JOIN (SELECT id FROM {table_name} WHERE id >= (SELECT FLOOR(RAND() * (MAX(id) - MIN(id) + 1)) + MIN(id) FROM {table_name}) ORDER BY id LIMIT 1) AS t2 ON t1.id = t2.id'
                 log.debug(f"Executing query: {query}")
                 cur.execute(query)
                 return cur.fetchone()
