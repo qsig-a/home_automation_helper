@@ -2,7 +2,7 @@
 import mysql.connector
 from mysql.connector import pooling
 import logging
-import json
+from pydantic_core import from_json
 from contextlib import contextmanager
 # from typing import Union # Reverted for Python 3.10+
 from app.config import Settings
@@ -197,13 +197,13 @@ def GetSingleRandArt(settings: Settings) -> tuple[list[list[int]], str] | None:
     if row:
         art_data_str, title = row
         try:
-            art_data = json.loads(art_data_str)
+            art_data = from_json(art_data_str)
             if isinstance(art_data, list):
                 return (art_data, str(title) if title else "")
             else:
                 log.warning("Art data is not a list.")
                 return None
-        except json.JSONDecodeError as e:
+        except ValueError as e:
             log.error(f"Failed to decode art data: {e}")
             return None
     return None
