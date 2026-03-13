@@ -100,11 +100,11 @@ class TestSayingsValidation:
 
     def test_fetch_random_row_invalid_table(self, mock_settings_db_enabled):
         with pytest.raises(ValueError, match="Invalid table name: invalid_table"):
-            _fetch_random_row("invalid_table", ["quote"], mock_settings_db_enabled)
+            _fetch_random_row("invalid_table", ("quote",), mock_settings_db_enabled)
 
     def test_fetch_random_row_invalid_column(self, mock_settings_db_enabled):
         with pytest.raises(ValueError, match="Invalid column name: invalid_column"):
-            _fetch_random_row("sfw_quotes", ["quote", "invalid_column"], mock_settings_db_enabled)
+            _fetch_random_row("sfw_quotes", ("quote", "invalid_column"), mock_settings_db_enabled)
 
 class TestPoolFunctions:
     @patch("app.sayings.sayings.pooling.MySQLConnectionPool")
@@ -164,7 +164,7 @@ class TestArtFunctions:
         result = GetSingleRandArt(settings=mock_settings_db_enabled)
 
         assert result == (expected_art, expected_title)
-        mock_fetch.assert_called_once_with("art", ["art_data", "title"], mock_settings_db_enabled)
+        mock_fetch.assert_called_once_with("art", ("art_data", "title"), mock_settings_db_enabled)
 
     @patch("app.sayings.sayings._fetch_random_row")
     def test_art_found_invalid_json(self, mock_fetch, mock_settings_db_enabled):

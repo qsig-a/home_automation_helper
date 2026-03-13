@@ -125,7 +125,7 @@ def _db_connection(settings: Settings):
 
 def _fetch_column_from_table(table_name: str, column_name: str, settings: Settings) -> str | None:
     """Fetches a random value from a given table and column using a managed DB connection."""
-    result = _fetch_random_row(table_name, [column_name], settings)
+    result = _fetch_random_row(table_name, (column_name,), settings)
 
     if result and result[0] is not None:
         log.debug(f"Value found in {table_name}.{column_name}.")
@@ -134,10 +134,9 @@ def _fetch_column_from_table(table_name: str, column_name: str, settings: Settin
         log.warning(f"No value found in table {table_name} or result was NULL.")
         return None
 
-def _fetch_random_row(table_name: str, columns: list[str], settings: Settings) -> tuple | None:
+def _fetch_random_row(table_name: str, columns: tuple[str, ...], settings: Settings) -> tuple | None:
     """Fetches a random row for specific columns from a given table."""
-    columns_tuple = tuple(columns)
-    cache_key = (table_name, columns_tuple)
+    cache_key = (table_name, columns)
     query = _query_cache.get(cache_key)
 
     if not query:
@@ -192,7 +191,7 @@ def GetSingleRandArt(settings: Settings) -> tuple[list[list[int]], str] | None:
          log.info("Art requested but sayings DB is disabled in settings.")
          return None
 
-    row = _fetch_random_row("art", ["art_data", "title"], settings)
+    row = _fetch_random_row("art", ("art_data", "title"), settings)
 
     if row:
         art_data_str, title = row
