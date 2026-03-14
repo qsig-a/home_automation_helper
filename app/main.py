@@ -124,23 +124,33 @@ async def _get_and_send_base(
         log.exception(f"Unexpected error process: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"{config.error_message}: An unexpected internal error occurred")
 
+def _process_quote(result: str) -> tuple[str, Dict[str, str]]:
+    return result, {}
+
 async def get_and_send_quote(
     config: ActionConfig[str | None],
     settings: Settings,
     connector: VestaboardConnector,
     **kwargs
 ) -> Dict[str, str]:
-    def process_quote(result: str) -> tuple[str, Dict[str, str]]:
-        return result, {}
-
     return await _get_and_send_base(
         config=config,
         settings=settings,
         connector=connector,
         send_method_name="send_message",
-        process_result=process_quote,
+        process_result=_process_quote,
         **kwargs
     )
+
+def _process_art(result) -> tuple[List[List[int]], Dict[str, str]]:
+    title = "Unknown"
+    if isinstance(result, tuple):
+        data, fetched_title = result
+        if fetched_title:
+            title = fetched_title
+    else:
+        data = result
+    return data, {"title": title}
 
 async def get_and_send_art(
     config: ActionConfig[List[List[int]] | tuple[List[List[int]], str] | None],
@@ -148,22 +158,12 @@ async def get_and_send_art(
     connector: VestaboardConnector,
     **kwargs
 ) -> Dict[str, str]:
-    def process_art(result) -> tuple[List[List[int]], Dict[str, str]]:
-        title = "Unknown"
-        if isinstance(result, tuple):
-            data, fetched_title = result
-            if fetched_title:
-                title = fetched_title
-        else:
-            data = result
-        return data, {"title": title}
-
     return await _get_and_send_base(
         config=config,
         settings=settings,
         connector=connector,
         send_method_name="send_array",
-        process_result=process_art,
+        process_result=_process_art,
         **kwargs
     )
 

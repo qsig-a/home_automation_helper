@@ -9,3 +9,7 @@
 ## 2024-05-24 - [Fast JSON decoding for large array structures]
 **Learning:** Decoding large array structures (like 6x22 Vestaboard grid representations) from the database using standard library `json.loads` is a measurable bottleneck (~0.3ms per decode). `pydantic_core.from_json`, which is already available as a dependency, provides a >4x speedup due to its Rust implementation.
 **Action:** For performance-sensitive data fetching, especially large JSON payloads from DB rows, replace standard library `json.loads` with `pydantic_core.from_json`. Make sure to catch `ValueError` instead of `json.JSONDecodeError`.
+
+## 2025-02-13 - Extract Inline Helper Functions
+**Learning:** In high-throughput route handlers (e.g., FastAPI endpoints), defining pure helper functions inline (as closures) causes unnecessary function object allocation overhead on every request.
+**Action:** Define pure helper functions at the module level rather than inline to avoid this overhead.
