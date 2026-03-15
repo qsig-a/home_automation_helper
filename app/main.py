@@ -168,6 +168,18 @@ async def get_and_send_art(
     )
 
 
+# ⚡ Bolt: Extracted `_schedule_end_boggle_display` to module level.
+# Defining async closures inside high-throughput route handlers forces Python to allocate
+# a new function object on every request. Moving it here eliminates that overhead.
+async def _schedule_end_boggle_display(grid: List[List[int]], conn: VestaboardConnector):
+    await asyncio.sleep(200)
+    log.info("Boggle timer finished. Sending end grid.")
+    try:
+        await conn.send_array(grid, source='rw')
+        log.info("Successfully sent Boggle end grid.")
+    except Exception as e:
+        log.error(f"Error sending Boggle end grid in background task: {e}", exc_info=True)
+
 @app.post("/games/boggle", status_code=202)
 async def start_boggle_game(
     item: BoggleClass,
@@ -183,22 +195,60 @@ async def start_boggle_game(
         log.exception(f"Error generating Boggle grids: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Error creating game grids")
 
-    async def schedule_end_boggle_display(grid: List[List[int]], conn: VestaboardConnector):
-        await asyncio.sleep(200)
-        log.info("Boggle timer finished. Sending end grid.")
-        try:
-            await conn.send_array(grid, source='rw')
-            log.info("Successfully sent Boggle end grid.")
-        except Exception as e:
-            log.error(f"Error sending Boggle end grid in background task: {e}", exc_info=True)
-
     await handle_vestaboard_action(
         lambda: connector.send_array(start_grid, source='rw'),
         f"Vestaboard error initiating Boggle {item.size}x{item.size} game"
     )
 
-    background_tasks.add_task(schedule_end_boggle_display, end_grid, connector)
+    background_tasks.add_task(_schedule_end_boggle_display, end_grid, connector)
     return {"message": f"Boggle {item.size}x{item.size} game queued."}
+
+
+# ⚡ Bolt: Pre-instantiate ActionConfig objects at module load time.
+# Previously, these dataclasses were instantiated inline on every single GET request.
+# By making them module-level constants, we eliminate object allocation overhead
+# on the hot path for these six endpoints.
+_SFW_QUOTE_CONFIG = ActionConfig(
+    func=say.GetSingleRandSfwS,
+    success_message="Random SFW quote queued",
+    error_message="Error getting SFW quote",
+    source='rw'
+)
+
+_SFW_QUOTE_LOCAL_CONFIG = ActionConfig(
+    func=say.GetSingleRandSfwS,
+    success_message="Random SFW quote queued (Local)",
+    error_message="Error getting SFW quote",
+    source='local'
+)
+
+_NSFW_QUOTE_CONFIG = ActionConfig(
+    func=say.GetSingleRandNsfwS,
+    success_message="Random NSFW quote queued",
+    error_message="Error getting NSFW quote",
+    source='rw'
+)
+
+_NSFW_QUOTE_LOCAL_CONFIG = ActionConfig(
+    func=say.GetSingleRandNsfwS,
+    success_message="Random NSFW quote queued (Local)",
+    error_message="Error getting NSFW quote",
+    source='local'
+)
+
+_ART_CONFIG = ActionConfig(
+    func=say.GetSingleRandArt,
+    success_message="Random art queued",
+    error_message="Error getting art",
+    source='rw'
+)
+
+_ART_LOCAL_CONFIG = ActionConfig(
+    func=say.GetSingleRandArt,
+    success_message="Random art queued (Local)",
+    error_message="Error getting art",
+    source='local'
+)
 
 
 @app.get("/sfw_quote")
@@ -207,12 +257,7 @@ async def get_sfw_quote(
     connector: VestaboardConnector = Depends(get_vestaboard_connector)
 ) -> Dict[str, str]:
     return await get_and_send_quote(
-        config=ActionConfig(
-            func=say.GetSingleRandSfwS,
-            success_message="Random SFW quote queued",
-            error_message="Error getting SFW quote",
-            source='rw'
-        ),
+        config=_SFW_QUOTE_CONFIG,
         settings=settings,
         connector=connector
     )
@@ -224,12 +269,7 @@ async def get_sfw_quote_local(
     connector: VestaboardConnector = Depends(get_vestaboard_connector)
 ) -> Dict[str, str]:
     return await get_and_send_quote(
-        config=ActionConfig(
-            func=say.GetSingleRandSfwS,
-            success_message="Random SFW quote queued (Local)",
-            error_message="Error getting SFW quote",
-            source='local'
-        ),
+        config=_SFW_QUOTE_LOCAL_CONFIG,
         settings=settings,
         connector=connector,
         strategy=options.strategy,
@@ -243,12 +283,7 @@ async def get_nsfw_quote(
     connector: VestaboardConnector = Depends(get_vestaboard_connector)
 ) -> Dict[str, str]:
     return await get_and_send_quote(
-        config=ActionConfig(
-            func=say.GetSingleRandNsfwS,
-            success_message="Random NSFW quote queued",
-            error_message="Error getting NSFW quote",
-            source='rw'
-        ),
+        config=_NSFW_QUOTE_CONFIG,
         settings=settings,
         connector=connector
     )
@@ -260,12 +295,7 @@ async def get_nsfw_quote_local(
     connector: VestaboardConnector = Depends(get_vestaboard_connector)
 ) -> Dict[str, str]:
     return await get_and_send_quote(
-        config=ActionConfig(
-            func=say.GetSingleRandNsfwS,
-            success_message="Random NSFW quote queued (Local)",
-            error_message="Error getting NSFW quote",
-            source='local'
-        ),
+        config=_NSFW_QUOTE_LOCAL_CONFIG,
         settings=settings,
         connector=connector,
         strategy=options.strategy,
@@ -279,12 +309,7 @@ async def get_random_art(
     connector: VestaboardConnector = Depends(get_vestaboard_connector)
 ) -> Dict[str, str]:
     return await get_and_send_art(
-        config=ActionConfig(
-            func=say.GetSingleRandArt,
-            success_message="Random art queued",
-            error_message="Error getting art",
-            source='rw'
-        ),
+        config=_ART_CONFIG,
         settings=settings,
         connector=connector
     )
@@ -296,12 +321,7 @@ async def get_random_art_local(
     connector: VestaboardConnector = Depends(get_vestaboard_connector)
 ) -> Dict[str, str]:
     return await get_and_send_art(
-        config=ActionConfig(
-            func=say.GetSingleRandArt,
-            success_message="Random art queued (Local)",
-            error_message="Error getting art",
-            source='local'
-        ),
+        config=_ART_LOCAL_CONFIG,
         settings=settings,
         connector=connector,
         strategy=options.strategy,

@@ -13,3 +13,7 @@
 ## 2025-02-13 - Extract Inline Helper Functions
 **Learning:** In high-throughput route handlers (e.g., FastAPI endpoints), defining pure helper functions inline (as closures) causes unnecessary function object allocation overhead on every request.
 **Action:** Define pure helper functions at the module level rather than inline to avoid this overhead.
+
+## 2025-02-14 - Pre-instantiate Static Route Configurations
+**Learning:** Defining static configuration objects (like `ActionConfig` dataclasses) directly within FastAPI route handlers causes identical, stateless objects to be re-instantiated on every single API request, adding unnecessary allocation and garbage collection overhead to the hot path.
+**Action:** For static configurations that don't change per request, pre-instantiate them as module-level constants and reference those constants inside the route handlers.
