@@ -107,8 +107,14 @@ class VestaboardConnector:
         # By using a direct array lookup `_CHAR_CODE_ARRAY[ord(char)]` for ASCII/Latin-1
         # characters, we bypass dictionary hashing completely and maintain peak performance,
         # while safely falling back to 0 (space) for unsupported unicode characters.
+        #
+        # ⚡ Bolt: Further optimized by localizing `_CHAR_CODE_ARRAY` and `ord` lookups
+        # outside the loop, avoiding global/builtin overhead on every iteration.
         codes = [0] * 132
         idx = 0
+
+        char_array = _CHAR_CODE_ARRAY
+        _ord = ord
 
         for char in text:
             if char == '\n':
@@ -118,8 +124,9 @@ class VestaboardConnector:
                     break
                 continue
 
-            o = ord(char)
-            codes[idx] = _CHAR_CODE_ARRAY[o] if o < 256 else 0
+            o = _ord(char)
+            if o < 256:
+                codes[idx] = char_array[o]
             idx += 1
 
             if idx >= 132:
