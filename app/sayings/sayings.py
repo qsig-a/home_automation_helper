@@ -147,7 +147,7 @@ def _fetch_random_row(table_name: str, columns: tuple[str, ...], settings: Setti
                 raise ValueError(f"Invalid column name: {column_name}")
         cols_str = ", ".join([f"t1.{c}" for c in columns])
         # Optimized approach: avoid full table scan by using an inner join on a random ID
-        query = f'SELECT {cols_str} FROM {table_name} AS t1 JOIN (SELECT id FROM {table_name} WHERE id >= (SELECT FLOOR(RAND() * (MAX(id) - MIN(id) + 1)) + MIN(id) FROM {table_name}) ORDER BY id LIMIT 1) AS t2 ON t1.id = t2.id'
+        query = f'SELECT {cols_str} FROM {table_name} AS t1 JOIN (SELECT id FROM {table_name} WHERE id >= (SELECT FLOOR(RAND() * (MAX(id) - MIN(id) + 1)) + MIN(id) FROM {table_name}) ORDER BY id LIMIT 1) AS t2 ON t1.id = t2.id'  # noqa: S608
         _query_cache[cache_key] = query
 
     try:
