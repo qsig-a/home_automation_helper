@@ -1,9 +1,11 @@
 import pytest
 import asyncio # Added import for asyncio
+from fastapi import Request, HTTPException
 from fastapi.testclient import TestClient
 from unittest.mock import AsyncMock, patch, MagicMock
 
 from app.config import Settings
+from app.main import get_vestaboard_connector
 from app.connectors.vestaboard import (
     VestaboardError,
     VestaboardAuthError,
@@ -13,6 +15,31 @@ from app.connectors.vestaboard import (
 # Basic test to ensure the file is created and pytest can find it
 def test_initial_setup():
     assert True
+
+
+@pytest.mark.asyncio
+async def test_get_vestaboard_connector_success():
+    """Tests that get_vestaboard_connector returns the connector when present."""
+    mock_request = MagicMock(spec=Request)
+    mock_connector = AsyncMock()
+    mock_request.app.state.vestaboard_connector = mock_connector
+
+    connector = await get_vestaboard_connector(mock_request)
+    assert connector is mock_connector
+
+
+@pytest.mark.asyncio
+async def test_get_vestaboard_connector_missing():
+    """Tests that get_vestaboard_connector raises 500 when connector is missing."""
+    mock_request = MagicMock(spec=Request)
+    # Explicitly set to None to simulate missing connector
+    mock_request.app.state.vestaboard_connector = None
+
+    with pytest.raises(HTTPException) as exc_info:
+        await get_vestaboard_connector(mock_request)
+
+    assert exc_info.value.status_code == 500
+    assert "Vestaboard connector not initialized" in exc_info.value.detail
 
 
 # --- Test for GET / endpoint ---
