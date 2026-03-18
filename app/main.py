@@ -101,11 +101,11 @@ app.add_middleware(SecurityHeadersMiddleware)
 
 
 async def handle_vestaboard_action(
-    action: Callable[[], Awaitable[T]],
+    action: Awaitable[T],
     error_prefix: str
 ) -> T:
     try:
-        return await action()
+        return await action
     except VestaboardInvalidCharsError as e:
         log.warning(f"{error_prefix}: Invalid characters. {e}")
         raise HTTPException(status_code=422, detail=f"{error_prefix}: Invalid characters. {e}")
@@ -138,7 +138,7 @@ async def _get_and_send_base(
 
         send_method = getattr(connector, send_method_name)
         await handle_vestaboard_action(
-            lambda: send_method(data, source=config.source, **kwargs),
+            send_method(data, source=config.source, **kwargs),
             config.error_message
         )
         log.info(f"Successfully sent to board: {config.success_message}")
@@ -227,7 +227,7 @@ async def start_boggle_game(
         raise HTTPException(status_code=500, detail="Error creating game grids")
 
     await handle_vestaboard_action(
-        lambda: connector.send_array(start_grid, source='rw'),
+        connector.send_array(start_grid, source='rw'),
         f"Vestaboard error initiating Boggle {item.size}x{item.size} game"
     )
 
@@ -369,7 +369,7 @@ async def post_message(
         raise HTTPException(status_code=400, detail="No message content provided.")
 
     await handle_vestaboard_action(
-        lambda: connector.send_message(item.message, source='rw'),
+        connector.send_message(item.message, source='rw'),
         "Error sending message"
     )
     return {"message": "Message sent successfully"}
@@ -383,7 +383,7 @@ async def post_message_local(
         raise HTTPException(status_code=400, detail="No message content provided.")
 
     await handle_vestaboard_action(
-        lambda: connector.send_message(
+        connector.send_message(
             item.message,
             source='local',
             strategy=item.strategy,
