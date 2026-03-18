@@ -1,0 +1,6 @@
+# Sentinel Journal
+
+## 2024-05-24 - Resolving SQL Injection Warnings in Dynamic Queries with Precomputed Caches
+**Vulnerability:** A Bandit SAST alert (B608/S608) flagged possible SQL injection vectors in dynamic string-based query construction inside the database querying utility `_fetch_random_row` when interpolating table and column names (`f'SELECT {cols_str} FROM {table_name} ...'`).
+**Learning:** Standard DB-API parameterization (using `?` or `%s` in the `execute` method) only applies to literal values within `WHERE` or `VALUES` clauses, not structural elements like table or column names, which the SQL engine expects to be statically parsed. Although the `table_name` and `columns` values are statically verified against an `ALLOWED_TABLES` allowlist to mitigate actual injection risk, dynamically generating the SQL string at execution time still triggers SAST tools and incurs minor runtime overhead.
+**Prevention:** Rather than dynamically concatenating table and column names inside the query function execution, compute and validate the full query strings once, caching them in a module-level dictionary (`_query_cache`) using a tuple of the inputs as a key. This isolates string concatenation from the execution path and safely satisfies SAST rules when parameterization isn't applicable.

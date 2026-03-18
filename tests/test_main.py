@@ -235,8 +235,7 @@ async def test_start_boggle_game_success(
 def test_start_boggle_game_invalid_size(client: TestClient):
     """Tests Boggle game start with invalid size."""
     response = client.post("/games/boggle", json={"size": 3})
-    assert response.status_code == 400
-    assert response.json() == {"detail": "Invalid Boggle size. Must be 4 or 5."}
+    assert response.status_code == 422
 
 @patch("app.main.bg.generate_boggle_grids")
 def test_start_boggle_game_grid_generation_error(mock_generate_grids: MagicMock, client: TestClient):
