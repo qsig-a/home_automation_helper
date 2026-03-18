@@ -15,7 +15,7 @@ class LocalBoardOptions:
         self.step_size = step_size
 
 class BoggleClass(BaseModel):
-    size: int
+    size: int = Field(..., ge=4, le=5, description="Size of the Boggle grid (4 or 5)")
 
 class MessageClass(BaseModel):
     message: str = Field(..., max_length=1024, description="The message text to display")
