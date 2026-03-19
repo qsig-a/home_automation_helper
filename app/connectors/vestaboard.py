@@ -190,7 +190,7 @@ class VestaboardConnector:
         """
         string_text = str(text)
         if not VALID_CHARS_REGEX.match(string_text):
-             log.warning(f"Message contains invalid characters: '{string_text}'")
+             log.warning(f"Message contains invalid characters: {repr(string_text)}")
              raise VestaboardInvalidCharsError("Message contains invalid characters.")
 
         if source == 'local':
