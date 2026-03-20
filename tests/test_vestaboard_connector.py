@@ -4,11 +4,13 @@ from unittest.mock import AsyncMock
 from app.connectors.vestaboard import VestaboardConnector, VestaboardError
 from app.config import Settings
 
+from pydantic import SecretStr
+
 @pytest.fixture
 def real_settings():
     settings = Settings()
-    settings.vestaboard_rw_api_key = "rw_key"
-    settings.vestaboard_local_api_key = "local_key"
+    settings.vestaboard_rw_api_key = SecretStr("rw_key")
+    settings.vestaboard_local_api_key = SecretStr("local_key")
     settings.vestaboard_local_api_ip = "192.168.1.100"
     return settings
 

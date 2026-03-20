@@ -57,8 +57,8 @@ class VestaboardConnector:
     """
     def __init__(self, settings: Settings):
         self._settings = settings
-        self._rw_api_key = settings.vestaboard_rw_api_key
-        self._local_api_key = settings.vestaboard_local_api_key
+        self._rw_api_key = settings.vestaboard_rw_api_key.get_secret_value() if settings.vestaboard_rw_api_key else None
+        self._local_api_key = settings.vestaboard_local_api_key.get_secret_value() if settings.vestaboard_local_api_key else None
         self._local_api_ip = settings.vestaboard_local_api_ip
 
         # RW API Client
