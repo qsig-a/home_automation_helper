@@ -48,7 +48,7 @@ def init_db_pool(settings: Settings):
             pool_size=5,
             pool_reset_session=True,
             user=settings.saying_db_user,
-            password=settings.saying_db_pass,
+            password=settings.saying_db_pass.get_secret_value() if settings.saying_db_pass else None,
             host=settings.saying_db_host,
             port=int(settings.saying_db_port),
             database=settings.saying_db_name,
@@ -98,7 +98,7 @@ def _db_connection(settings: Settings):
             # Fallback for testing or if pool initialization failed
             cnx = mysql.connector.connect(
                 user=settings.saying_db_user,
-                password=settings.saying_db_pass,
+                password=settings.saying_db_pass.get_secret_value() if settings.saying_db_pass else None,
                 host=settings.saying_db_host,
                 port=int(settings.saying_db_port),
                 database=settings.saying_db_name,

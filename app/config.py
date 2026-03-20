@@ -1,16 +1,17 @@
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings
 from typing import Optional
 from functools import lru_cache
 
 class Settings(BaseSettings):
     saying_db_user: Optional[str] = None
-    saying_db_pass: Optional[str] = None
+    saying_db_pass: Optional[SecretStr] = None
     saying_db_host: Optional[str] = None
     saying_db_port: Optional[int] = 3306
     saying_db_name: Optional[str] = None
     saying_db_enable: str = "0" # Default to disabled
-    vestaboard_rw_api_key: Optional[str] = None
-    vestaboard_local_api_key: Optional[str] = None
+    vestaboard_rw_api_key: Optional[SecretStr] = None
+    vestaboard_local_api_key: Optional[SecretStr] = None
     vestaboard_local_api_ip: Optional[str] = None
 
     class Config:

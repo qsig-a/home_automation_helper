@@ -6,6 +6,7 @@ import json
 from app.sayings.sayings import GetSingleRandSfwS, GetSingleRandNsfwS, GetSingleRandArt, init_db_pool, close_db_pool, _fetch_column_from_table, _fetch_random_row
 import app.sayings.sayings as say
 from app.config import Settings
+from pydantic import SecretStr
 
 @pytest.fixture
 def mock_settings_db_enabled() -> Settings:
@@ -13,7 +14,7 @@ def mock_settings_db_enabled() -> Settings:
     return Settings(
         saying_db_enable="1",
         saying_db_user="testuser",
-        saying_db_pass="testpass",
+        saying_db_pass=SecretStr("testpass"),
         saying_db_host="testhost",
         saying_db_port=3306,
         saying_db_name="testdb"
@@ -116,7 +117,7 @@ class TestPoolFunctions:
             pool_size=5,
             pool_reset_session=True,
             user=mock_settings_db_enabled.saying_db_user,
-            password=mock_settings_db_enabled.saying_db_pass,
+            password=mock_settings_db_enabled.saying_db_pass.get_secret_value(),
             host=mock_settings_db_enabled.saying_db_host,
             port=mock_settings_db_enabled.saying_db_port,
             database=mock_settings_db_enabled.saying_db_name,
