@@ -80,7 +80,8 @@ class SecurityHeadersMiddleware:
             (b"x-content-type-options", b"nosniff"),
             (b"x-frame-options", b"DENY"),
             (b"x-xss-protection", b"1; mode=block"),
-            (b"strict-transport-security", b"max-age=31536000; includeSubDomains")
+            (b"strict-transport-security", b"max-age=31536000; includeSubDomains"),
+            (b"content-security-policy", b"default-src 'none'")
         ]
 
     async def __call__(self, scope, receive, send):
