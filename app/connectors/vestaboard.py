@@ -157,7 +157,8 @@ class VestaboardConnector:
             response.raise_for_status()
             log.info("Successfully sent message via RW API.")
         except httpx.HTTPStatusError as e:
-            log.error(f"RW API HTTP error: {e.response.status_code} - {e.response.text}")
+            # 🛡️ Sentinel: Wrap external untrusted response text in repr() to prevent log injection (CRLF)
+            log.error(f"RW API HTTP error: {e.response.status_code} - {repr(e.response.text)}")
             raise VestaboardError(f"RW API error: {e.response.status_code}") from e
         except httpx.RequestError as e:
             log.error(f"RW API network error: {e}")
@@ -178,7 +179,8 @@ class VestaboardConnector:
             response.raise_for_status()
             log.info("Successfully sent message via Local API.")
         except httpx.HTTPStatusError as e:
-            log.error(f"Local API HTTP error: {e.response.status_code} - {e.response.text}")
+            # 🛡️ Sentinel: Wrap external untrusted response text in repr() to prevent log injection (CRLF)
+            log.error(f"Local API HTTP error: {e.response.status_code} - {repr(e.response.text)}")
             raise VestaboardError(f"Local API error: {e.response.status_code}") from e
         except httpx.RequestError as e:
             log.error(f"Local API network error: {e}")
