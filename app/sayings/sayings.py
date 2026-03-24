@@ -1,6 +1,5 @@
 
-import mysql.connector
-from mysql.connector import pooling
+from mysql.connector import pooling, Error, PoolError, connect
 import logging
 from pydantic_core import from_json
 from contextlib import contextmanager
@@ -76,7 +75,7 @@ def init_db_pool(settings: Settings):
             connection_timeout=5
         )
         log.info("Database connection pool initialized.")
-    except mysql.connector.Error as err:
+    except Error as err:
         log.error(f"Error initializing connection pool: {err}")
     except ValueError as verr:
         log.error(f"Database configuration error for pool: {verr}")
@@ -117,7 +116,7 @@ def _db_connection(settings: Settings):
             log.debug("Obtained connection from pool.")
         else:
             # Fallback for testing or if pool initialization failed
-            cnx = mysql.connector.connect(
+            cnx = connect(
                 user=settings.saying_db_user,
                 password=settings.saying_db_pass.get_secret_value() if settings.saying_db_pass else None,
                 host=settings.saying_db_host,
@@ -127,10 +126,10 @@ def _db_connection(settings: Settings):
             )
             log.debug("Database connection successful (no pool).")
         yield cnx
-    except mysql.connector.PoolError as err:
+    except PoolError as err:
         log.error(f"Error getting connection from pool: {err}")
         raise ConnectionError(f"Database connection pool exhausted: {err}") from err
-    except mysql.connector.Error as err:
+    except Error as err:
         log.error(f"Error connecting to database: {err}")
         raise ConnectionError(f"Database connection failed: {err}") from err
     except ValueError as verr:
@@ -141,7 +140,7 @@ def _db_connection(settings: Settings):
             try:
                 cnx.close()
                 log.debug("Database connection returned to pool or closed.")
-            except mysql.connector.Error as err:
+            except Error as err:
                 log.warning(f"Error closing connection/returning to pool: {err}")
 
 def _fetch_column_from_table(table_name: str, column_name: str, settings: Settings) -> str | None:
@@ -184,7 +183,7 @@ def _fetch_random_row(table_name: str, columns: tuple[str, ...], settings: Setti
                 log.debug(f"Executing query: {query}")
                 cur.execute(query)
                 return cur.fetchone()
-    except mysql.connector.Error as err:
+    except Error as err:
         # 🛡️ Sentinel: Use repr() to prevent log injection.
         log.error(f"Database query error in {repr(table_name)}: {err}")
         raise ConnectionError(f"Database query failed for {repr(table_name)}") from err

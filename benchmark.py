@@ -2,11 +2,12 @@ import time
 from unittest.mock import MagicMock
 from app.config import get_settings
 import app.sayings.sayings
+from pydantic import SecretStr
 
 settings = get_settings()
 settings.saying_db_enable = '1'
 settings.saying_db_user = 'testuser'
-settings.saying_db_pass = 'testpass'
+settings.saying_db_pass = SecretStr('testpass')
 settings.saying_db_host = 'testhost'
 settings.saying_db_port = 3306
 settings.saying_db_name = 'testdb'
@@ -21,8 +22,8 @@ def mock_connect(*args, **kwargs):
     time.sleep(0.01) # Simulate network/connection latency
     return mock_db_conn
 
-app.sayings.sayings.mysql = MagicMock()
-app.sayings.sayings.mysql.connector.connect.side_effect = mock_connect
+app.sayings.sayings.connect = MagicMock()
+app.sayings.sayings.connect.side_effect = mock_connect
 
 # 1. Test without pool (baseline)
 # Force clear pool to simulate old behavior
