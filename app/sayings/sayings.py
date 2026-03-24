@@ -42,13 +42,9 @@ _STATIC_QUERIES: dict[tuple[str, tuple[str, ...]], str] = {
     ),
 }
 
-def init_db_pool(settings: Settings):
-    """Initializes the MySQL connection pool."""
-    global _connection_pool, _db_configured_cache
-    if settings.saying_db_enable != "1":
-        log.info("Database disabled, not initializing connection pool.")
-        return
-
+def _is_db_configured(settings: Settings) -> bool:
+    """Checks if essential DB configuration is present and caches the result."""
+    global _db_configured_cache
     if _db_configured_cache is None:
         _db_configured_cache = bool(
             settings.saying_db_user and
@@ -57,8 +53,38 @@ def init_db_pool(settings: Settings):
             settings.saying_db_port and
             settings.saying_db_name
         )
+    return _db_configured_cache
 
-    if not _db_configured_cache:
+
+def _acquire_connection(settings: Settings):
+    """Acquires a database connection, either from the pool or directly."""
+    global _connection_pool
+    if _connection_pool:
+        cnx = _connection_pool.get_connection()
+        log.debug("Obtained connection from pool.")
+        return cnx
+
+    # Fallback for testing or if pool initialization failed
+    cnx = connect(
+        user=settings.saying_db_user,
+        password=settings.saying_db_pass.get_secret_value() if settings.saying_db_pass else None,
+        host=settings.saying_db_host,
+        port=int(settings.saying_db_port),
+        database=settings.saying_db_name,
+        connection_timeout=5
+    )
+    log.debug("Database connection successful (no pool).")
+    return cnx
+
+
+def init_db_pool(settings: Settings):
+    """Initializes the MySQL connection pool."""
+    global _connection_pool
+    if settings.saying_db_enable != "1":
+        log.info("Database disabled, not initializing connection pool.")
+        return
+
+    if not _is_db_configured(settings):
         log.error("Database configuration is incomplete, cannot initialize pool.")
         return
 
@@ -92,39 +118,14 @@ def close_db_pool():
 @contextmanager
 def _db_connection(settings: Settings):
     """A context manager for a MySQL database connection that handles setup and teardown."""
-    global _connection_pool, _db_configured_cache
-
-    # Check if essential DB configuration is present
-    if _db_configured_cache is None:
-        _db_configured_cache = bool(
-            settings.saying_db_user and
-            settings.saying_db_pass and
-            settings.saying_db_host and
-            settings.saying_db_port and
-            settings.saying_db_name
-        )
-
-    if not _db_configured_cache:
+    if not _is_db_configured(settings):
         log.error("Database configuration is incomplete.")
         raise ConnectionError("Database configuration is incomplete.")
 
     cnx = None
 
     try:
-        if _connection_pool:
-            cnx = _connection_pool.get_connection()
-            log.debug("Obtained connection from pool.")
-        else:
-            # Fallback for testing or if pool initialization failed
-            cnx = connect(
-                user=settings.saying_db_user,
-                password=settings.saying_db_pass.get_secret_value() if settings.saying_db_pass else None,
-                host=settings.saying_db_host,
-                port=int(settings.saying_db_port),
-                database=settings.saying_db_name,
-                connection_timeout=5
-            )
-            log.debug("Database connection successful (no pool).")
+        cnx = _acquire_connection(settings)
         yield cnx
     except PoolError as err:
         log.error(f"Error getting connection from pool: {err}")
