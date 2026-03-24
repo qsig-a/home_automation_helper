@@ -25,6 +25,25 @@ def mock_settings_db_disabled() -> Settings:
     """Returns a Settings instance with DB disabled."""
     return Settings(saying_db_enable="0")
 
+class TestDBConnection:
+    @patch("app.sayings.sayings.log.warning")
+    @patch("app.sayings.sayings._acquire_connection")
+    @patch("app.sayings.sayings._is_db_configured")
+    def test_db_connection_close_error(self, mock_is_configured, mock_acquire, mock_log_warning, mock_settings_db_enabled):
+        mock_is_configured.return_value = True
+
+        mock_cnx = MagicMock()
+        mock_cnx.is_connected.return_value = True
+        mock_cnx.close.side_effect = mysql.connector.Error("Simulated close error")
+        mock_acquire.return_value = mock_cnx
+
+        # We need to trigger the generator's exit code to simulate the context manager finishing.
+        with say._db_connection(mock_settings_db_enabled) as cnx:
+            assert cnx == mock_cnx
+
+        mock_cnx.close.assert_called_once()
+        mock_log_warning.assert_called_once_with("Error closing connection/returning to pool: Simulated close error")
+
 @pytest.mark.parametrize(
     "saying_function, table_name",
     [
