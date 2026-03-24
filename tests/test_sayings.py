@@ -202,21 +202,27 @@ class TestArtFunctions:
         assert result == (expected_art, expected_title)
         mock_fetch.assert_called_once_with("art", ("art_data", "title"), mock_settings_db_enabled)
 
+    @patch("app.sayings.sayings.log.error")
     @patch("app.sayings.sayings._fetch_random_row")
-    def test_art_found_invalid_json(self, mock_fetch, mock_settings_db_enabled):
+    def test_art_found_invalid_json(self, mock_fetch, mock_log_error, mock_settings_db_enabled):
         mock_fetch.return_value = ("invalid json", "Some Title")
 
         result = GetSingleRandArt(settings=mock_settings_db_enabled)
 
         assert result is None
+        mock_log_error.assert_called_once()
+        args, _ = mock_log_error.call_args
+        assert "Failed to decode art data:" in args[0]
 
+    @patch("app.sayings.sayings.log.warning")
     @patch("app.sayings.sayings._fetch_random_row")
-    def test_art_found_not_list(self, mock_fetch, mock_settings_db_enabled):
+    def test_art_found_not_list(self, mock_fetch, mock_log_warning, mock_settings_db_enabled):
         mock_fetch.return_value = (json.dumps({"key": "value"}), "Some Title") # Not a list
 
         result = GetSingleRandArt(settings=mock_settings_db_enabled)
 
         assert result is None
+        mock_log_warning.assert_called_once_with("Art data is not a list.")
 
     @patch("app.sayings.sayings._fetch_random_row")
     def test_no_art_found(self, mock_fetch, mock_settings_db_enabled):
