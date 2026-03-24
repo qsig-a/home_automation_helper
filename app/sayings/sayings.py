@@ -149,10 +149,12 @@ def _fetch_column_from_table(table_name: str, column_name: str, settings: Settin
     result = _fetch_random_row(table_name, (column_name,), settings)
 
     if result and result[0] is not None:
-        log.debug(f"Value found in {table_name}.{column_name}.")
+        # 🛡️ Sentinel: Use repr() to prevent log injection.
+        log.debug(f"Value found in {repr(table_name)}.{repr(column_name)}.")
         return str(result[0])
     else:
-        log.warning(f"No value found in table {table_name} or result was NULL.")
+        # 🛡️ Sentinel: Use repr() to prevent log injection.
+        log.warning(f"No value found in table {repr(table_name)} or result was NULL.")
         return None
 
 def _fetch_random_row(table_name: str, columns: tuple[str, ...], settings: Settings) -> tuple | None:
@@ -183,8 +185,9 @@ def _fetch_random_row(table_name: str, columns: tuple[str, ...], settings: Setti
                 cur.execute(query)
                 return cur.fetchone()
     except mysql.connector.Error as err:
-        log.error(f"Database query error in {table_name}: {err}")
-        raise ConnectionError(f"Database query failed for {table_name}") from err
+        # 🛡️ Sentinel: Use repr() to prevent log injection.
+        log.error(f"Database query error in {repr(table_name)}: {err}")
+        raise ConnectionError(f"Database query failed for {repr(table_name)}") from err
 
 # --- Public Functions ---
 
