@@ -232,18 +232,44 @@ async def test_start_boggle_game_success(
     # A more direct way to test the background task logic would be to test schedule_end_boggle_display directly.
 
 
-def test_start_boggle_game_invalid_size(client: TestClient):
-    """Tests Boggle game start with invalid size."""
+def test_start_boggle_game_invalid_size_pydantic(client: TestClient):
+    """Tests Boggle game start with invalid size via Pydantic validation."""
     response = client.post("/games/boggle", json={"size": 3})
     assert response.status_code == 422
 
+@pytest.mark.asyncio
+async def test_start_boggle_game_invalid_size_handler():
+    """Tests Boggle game start with invalid size bypassing Pydantic validation to hit handler logic."""
+    from app.main import start_boggle_game
+    from app.models import BoggleClass
+    from fastapi import BackgroundTasks
+
+    # Bypass validation by constructing directly
+    item = BoggleClass.model_construct(size=3)
+    bg_tasks = BackgroundTasks()
+    mock_connector = AsyncMock()
+
+    with pytest.raises(HTTPException) as exc_info:
+        await start_boggle_game(item=item, background_tasks=bg_tasks, connector=mock_connector)
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail == "Invalid Boggle size. Must be 4 or 5."
+
+@patch("app.main.log.exception")
 @patch("app.main.bg.generate_boggle_grids")
-def test_start_boggle_game_grid_generation_error(mock_generate_grids: MagicMock, client: TestClient):
+def test_start_boggle_game_grid_generation_error(
+    mock_generate_grids: MagicMock,
+    mock_log_exception: MagicMock,
+    client: TestClient
+):
     """Tests error during Boggle grid generation."""
-    mock_generate_grids.side_effect = ValueError("Grid generation failed")
+    test_error = Exception("Unexpected grid generation failure")
+    mock_generate_grids.side_effect = test_error
     response = client.post("/games/boggle", json={"size": 4})
     assert response.status_code == 500
     assert response.json() == {"detail": "Error creating game grids"}
+    mock_log_exception.assert_called_once()
+    assert "Error generating Boggle grids:" in mock_log_exception.call_args[0][0]
 
 @patch("app.main.bg.generate_boggle_grids")
 def test_start_boggle_game_vestaboard_auth_error(
