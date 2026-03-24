@@ -400,6 +400,38 @@ async def test_boggle_background_task_sends_end_grid_error(
     assert "Error sending Boggle end grid in background task" in mock_log_error.call_args[0][0]
 
 
+@pytest.mark.asyncio
+@patch("app.main.log.error")
+@patch("app.main.asyncio.sleep", new_callable=AsyncMock)
+async def test_schedule_end_boggle_display_error_logging(
+    mock_asyncio_sleep: AsyncMock,
+    mock_log_error: MagicMock,
+):
+    """
+    Test that _schedule_end_boggle_display logs an error if sending the end grid fails.
+    This tests the module-level function directly.
+    """
+    from app.main import _schedule_end_boggle_display
+    mock_connector = AsyncMock()
+    # Configure the mock to raise an exception
+    test_exception = Exception("Direct call send error")
+    mock_connector.send_array.side_effect = test_exception
+
+    test_grid = [[1]]
+
+    await _schedule_end_boggle_display(test_grid, mock_connector)
+
+    mock_asyncio_sleep.assert_called_once_with(200)
+    mock_connector.send_array.assert_called_once_with(test_grid, source='rw')
+
+    mock_log_error.assert_called_once()
+    logged_msg = mock_log_error.call_args[0][0]
+    assert "Error sending Boggle end grid in background task:" in logged_msg
+    assert "Direct call send error" in logged_msg
+    # exc_info=True should be passed
+    assert mock_log_error.call_args[1].get('exc_info') is True
+
+
 # --- Tests for Quote Endpoints (/sfw_quote, /nsfw_quote) ---
 
 # Helper function to avoid code duplication for SFW and NSFW tests
