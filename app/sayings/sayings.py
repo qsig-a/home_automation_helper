@@ -61,9 +61,9 @@ def init_db_pool(settings: Settings):
         log.error(f"Database configuration error for pool: {verr}")
 
 def close_db_pool():
-    """Closes the connection pool (no direct method, just cleanup reference)."""
+    """Closes the database connection pool."""
     global _connection_pool
-    if _connection_pool:
+    if _connection_pool is not None:
         # Note: MySQLConnectionPool does not have a close() method.
         # Connections returned to the pool are closed when the pool object is garbage collected.
         _connection_pool = None
