@@ -22,6 +22,17 @@ from app.connectors.vestaboard import (
 log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
+class UvicornInfoFilter(logging.Filter):
+    def filter(self, record):
+        if record.name == "uvicorn.error" and record.levelno < logging.WARNING:
+            record.name = "uvicorn.info"
+        return True
+
+_uvicorn_filter = UvicornInfoFilter()
+for handler in logging.root.handlers:
+    handler.addFilter(_uvicorn_filter)
+logging.getLogger("uvicorn.error").addFilter(_uvicorn_filter)
+
 T = TypeVar('T')
 T_Data = TypeVar('T_Data')
 
