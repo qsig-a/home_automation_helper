@@ -92,19 +92,19 @@ class TestSayingFunctions:
 
 class TestSayingsValidation:
     def test_fetch_column_invalid_table(self, mock_settings_db_enabled):
-        with pytest.raises(ValueError, match="Invalid table name: invalid_table"):
+        with pytest.raises(ValueError, match="Invalid table name: 'invalid_table'"):
             _fetch_column_from_table("invalid_table", "quote", mock_settings_db_enabled)
 
     def test_fetch_column_invalid_column(self, mock_settings_db_enabled):
-        with pytest.raises(ValueError, match="Invalid column name: invalid_column"):
+        with pytest.raises(ValueError, match="Invalid column name: 'invalid_column'"):
             _fetch_column_from_table("sfw_quotes", "invalid_column", mock_settings_db_enabled)
 
     def test_fetch_random_row_invalid_table(self, mock_settings_db_enabled):
-        with pytest.raises(ValueError, match="Invalid table name: invalid_table"):
+        with pytest.raises(ValueError, match="Invalid table name: 'invalid_table'"):
             _fetch_random_row("invalid_table", ("quote",), mock_settings_db_enabled)
 
     def test_fetch_random_row_invalid_column(self, mock_settings_db_enabled):
-        with pytest.raises(ValueError, match="Invalid column name: invalid_column"):
+        with pytest.raises(ValueError, match="Invalid column name: 'invalid_column'"):
             _fetch_random_row("sfw_quotes", ("quote", "invalid_column"), mock_settings_db_enabled)
 
 class TestPoolFunctions:
