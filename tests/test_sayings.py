@@ -140,6 +140,18 @@ class TestPoolFunctions:
         close_db_pool()
         assert say._connection_pool is None
 
+    def test_close_db_pool_when_none(self):
+        say._connection_pool = None
+        # Should not raise any error
+        close_db_pool()
+        assert say._connection_pool is None
+
+    @patch("app.sayings.sayings.log.info")
+    def test_close_db_pool_logging(self, mock_log_info):
+        say._connection_pool = MagicMock()
+        close_db_pool()
+        mock_log_info.assert_called_with("Database connection pool reference cleared.")
+
     @patch("app.sayings.sayings.pooling.MySQLConnectionPool")
     @patch("app.sayings.sayings.log.error")
     def test_init_db_pool_mysql_error(self, mock_log_error, mock_pool, mock_settings_db_enabled):
