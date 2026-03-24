@@ -20,7 +20,28 @@ ALLOWED_TABLES = {
     "art": {"id", "art_data", "title"},
 }
 
-_query_cache: dict[tuple[str, tuple[str, ...]], str] = {}
+# 🛡️ Sentinel: Pre-defined static SQL queries to prevent SQL injection vulnerabilities
+# that can arise from dynamic query construction (even with allowlists).
+_STATIC_QUERIES: dict[tuple[str, tuple[str, ...]], str] = {
+    ("sfw_quotes", ("quote",)): (
+        "SELECT t1.quote FROM sfw_quotes AS t1 "
+        "JOIN (SELECT id FROM sfw_quotes WHERE id >= "
+        "(SELECT FLOOR(RAND() * (MAX(id) - MIN(id) + 1)) + MIN(id) FROM sfw_quotes) "
+        "ORDER BY id LIMIT 1) AS t2 ON t1.id = t2.id"
+    ),
+    ("nsfw_quotes", ("quote",)): (
+        "SELECT t1.quote FROM nsfw_quotes AS t1 "
+        "JOIN (SELECT id FROM nsfw_quotes WHERE id >= "
+        "(SELECT FLOOR(RAND() * (MAX(id) - MIN(id) + 1)) + MIN(id) FROM nsfw_quotes) "
+        "ORDER BY id LIMIT 1) AS t2 ON t1.id = t2.id"
+    ),
+    ("art", ("art_data", "title")): (
+        "SELECT t1.art_data, t1.title FROM art AS t1 "
+        "JOIN (SELECT id FROM art WHERE id >= "
+        "(SELECT FLOOR(RAND() * (MAX(id) - MIN(id) + 1)) + MIN(id) FROM art) "
+        "ORDER BY id LIMIT 1) AS t2 ON t1.id = t2.id"
+    ),
+}
 
 def init_db_pool(settings: Settings):
     """Initializes the MySQL connection pool."""
@@ -137,18 +158,23 @@ def _fetch_column_from_table(table_name: str, column_name: str, settings: Settin
 def _fetch_random_row(table_name: str, columns: tuple[str, ...], settings: Settings) -> tuple | None:
     """Fetches a random row for specific columns from a given table."""
     cache_key = (table_name, columns)
-    query = _query_cache.get(cache_key)
+    query = _STATIC_QUERIES.get(cache_key)
 
     if not query:
+        # 🛡️ Sentinel: Validate input and prevent SQL injection.
+        # We use repr() when logging or raising exceptions with untrusted input to prevent log injection.
         if table_name not in ALLOWED_TABLES:
-            raise ValueError(f"Invalid table name: {table_name}")
+            log.warning(f"Invalid table access attempt: {repr(table_name)}")
+            raise ValueError(f"Invalid table name: {repr(table_name)}")
         for column_name in columns:
             if column_name not in ALLOWED_TABLES[table_name]:
-                raise ValueError(f"Invalid column name: {column_name}")
-        cols_str = ", ".join([f"t1.{c}" for c in columns])
-        # Optimized approach: avoid full table scan by using an inner join on a random ID
-        query = f'SELECT {cols_str} FROM {table_name} AS t1 JOIN (SELECT id FROM {table_name} WHERE id >= (SELECT FLOOR(RAND() * (MAX(id) - MIN(id) + 1)) + MIN(id) FROM {table_name}) ORDER BY id LIMIT 1) AS t2 ON t1.id = t2.id'  # noqa: S608
-        _query_cache[cache_key] = query
+                log.warning(f"Invalid column access attempt: {repr(column_name)} for table {repr(table_name)}")
+                raise ValueError(f"Invalid column name: {repr(column_name)}")
+
+        # If it is in ALLOWED_TABLES but not in _STATIC_QUERIES, it's a valid schema access
+        # but the query isn't pre-defined. We strictly forbid dynamic construction.
+        log.error(f"No static query defined for table {repr(table_name)} with columns {repr(columns)}")
+        raise ValueError("No static query defined for the requested data.")
 
     try:
         with _db_connection(settings) as cnx:
