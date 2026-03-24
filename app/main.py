@@ -81,7 +81,9 @@ class SecurityHeadersMiddleware:
             (b"x-frame-options", b"DENY"),
             (b"x-xss-protection", b"1; mode=block"),
             (b"strict-transport-security", b"max-age=31536000; includeSubDomains"),
-            (b"content-security-policy", b"default-src 'none'")
+            (b"content-security-policy", b"default-src 'none'"),
+            # 🛡️ Sentinel: Instruct browsers not to send the Referer header to prevent leaking application URLs
+            (b"referrer-policy", b"no-referrer")
         ]
 
     async def __call__(self, scope, receive, send):
