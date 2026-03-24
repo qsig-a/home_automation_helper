@@ -212,28 +212,19 @@ class VestaboardConnector:
              raise TypeError("Input 'characters' must be a list.")
 
         if source == 'local':
-            # Local API supports transitions
+            # Local API supports transitions.
+            # Simplified payload construction using dictionary comprehension to filter
+            # for transition options, improving readability and maintainability.
+            # Transition keys: strategy, step_interval_ms, step_size.
+            options = {
+                k: v for k, v in kwargs.items()
+                if k in {'strategy', 'step_interval_ms', 'step_size'} and v is not None
+            }
 
-            # Check if any transition params are present
-            # ⚡ Bolt: Explicit boolean condition using .get() avoids generator expression
-            # overhead and dict key exception checks, improving performance.
-            has_options = (
-                kwargs.get('strategy') is not None or
-                kwargs.get('step_interval_ms') is not None or
-                kwargs.get('step_size') is not None
-            )
-
-            if has_options:
-                payload = {"characters": characters}
-                if kwargs.get('strategy'):
-                    payload['strategy'] = kwargs['strategy']
-                if kwargs.get('step_interval_ms') is not None:
-                    payload['step_interval_ms'] = kwargs['step_interval_ms']
-                if kwargs.get('step_size') is not None:
-                    payload['step_size'] = kwargs['step_size']
-                await self._post_local(payload)
+            if options:
+                await self._post_local({"characters": characters, **options})
             else:
-                await self._post_local(characters) # Send raw list
+                await self._post_local(characters)  # Send raw list
         else:
             # RW API
             await self._post_rw(characters)
