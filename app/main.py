@@ -94,7 +94,11 @@ class SecurityHeadersMiddleware:
             (b"strict-transport-security", b"max-age=31536000; includeSubDomains"),
             (b"content-security-policy", b"default-src 'none'"),
             # 🛡️ Sentinel: Instruct browsers not to send the Referer header to prevent leaking application URLs
-            (b"referrer-policy", b"no-referrer")
+            (b"referrer-policy", b"no-referrer"),
+            # 🛡️ Sentinel: Prevent caching of API responses
+            (b"cache-control", b"no-store, no-cache, must-revalidate, max-age=0"),
+            # 🛡️ Sentinel: Mask the 'server' header to prevent technology stack information disclosure (Uvicorn adds it if omitted)
+            (b"server", b"hidden")
         ]
 
     async def __call__(self, scope, receive, send):
@@ -105,6 +109,8 @@ class SecurityHeadersMiddleware:
             if message["type"] == "http.response.start":
                 # Ensure compliance with ASGI spec (list of tuples)
                 headers = list(message.get("headers", []))
+                # Remove existing 'server' headers to prevent duplicates
+                headers = [h for h in headers if h[0].lower() != b"server"]
                 headers.extend(self._headers)
                 message["headers"] = headers
             await send(message)
