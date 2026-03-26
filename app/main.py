@@ -98,7 +98,9 @@ class SecurityHeadersMiddleware:
             # 🛡️ Sentinel: Prevent caching of API responses
             (b"cache-control", b"no-store, no-cache, must-revalidate, max-age=0"),
             # 🛡️ Sentinel: Mask the 'server' header to prevent technology stack information disclosure (Uvicorn adds it if omitted)
-            (b"server", b"hidden")
+            (b"server", b"hidden"),
+            # 🛡️ Sentinel: Restrict browser features via Permissions-Policy to prevent access to sensitive APIs
+            (b"permissions-policy", b"accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()")
         ]
 
     async def __call__(self, scope, receive, send):
