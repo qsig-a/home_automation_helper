@@ -100,7 +100,10 @@ class SecurityHeadersMiddleware:
             # 🛡️ Sentinel: Mask the 'server' header to prevent technology stack information disclosure (Uvicorn adds it if omitted)
             (b"server", b"hidden"),
             # 🛡️ Sentinel: Restrict browser features via Permissions-Policy to prevent access to sensitive APIs
-            (b"permissions-policy", b"accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()")
+            (b"permissions-policy", b"accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()"),
+            # 🛡️ Sentinel: Prevent cross-origin resource sharing and cross-origin window opening for API isolation
+            (b"cross-origin-resource-policy", b"same-origin"),
+            (b"cross-origin-opener-policy", b"same-origin")
         ]
 
     async def __call__(self, scope, receive, send):
