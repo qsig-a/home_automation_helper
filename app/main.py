@@ -390,9 +390,7 @@ async def post_message(
     item: MessageClass,
     connector: VestaboardConnector = Depends(get_vestaboard_connector)
 ) -> Dict[str, str]:
-    if not item.message:
-        raise HTTPException(status_code=400, detail="No message content provided.")
-
+    # 🛡️ Sentinel: Removed manual length check in favor of structural Pydantic validation (min_length=1)
     await handle_vestaboard_action(
         connector.send_message(item.message, source='rw'),
         "Error sending message"
@@ -404,9 +402,7 @@ async def post_message_local(
     item: MessageClass,
     connector: VestaboardConnector = Depends(get_vestaboard_connector)
 ) -> Dict[str, str]:
-    if not item.message:
-        raise HTTPException(status_code=400, detail="No message content provided.")
-
+    # 🛡️ Sentinel: Removed manual length check in favor of structural Pydantic validation (min_length=1)
     await handle_vestaboard_action(
         connector.send_message(
             item.message,

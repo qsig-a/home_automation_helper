@@ -66,9 +66,7 @@ def test_post_message_success(client: TestClient, mock_vestaboard_connector: Asy
 def test_post_message_empty_payload(client: TestClient):
     """Tests posting an empty message."""
     response = client.post("/message", json={"message": ""})
-    assert response.status_code == 400 # Based on current main.py logic
-    # The detail could be more specific, but current main.py raises HTTPException(400) before model validation for empty string
-    # assert response.json() == {"detail": "No message content provided."} # This would be ideal
+    assert response.status_code == 422 # Due to Pydantic min_length validation
 
 def test_post_message_no_content_provided(client: TestClient):
     """Tests posting with no message content, which should be caught by pydantic model."""
@@ -152,8 +150,7 @@ def test_post_message_local_with_parameters(client: TestClient, mock_vestaboard_
 def test_post_message_local_empty_payload(client: TestClient):
     """Tests posting an empty local message."""
     response = client.post("/message/local", json={"message": ""})
-    assert response.status_code == 400
-    assert response.json() == {"detail": "No message content provided."}
+    assert response.status_code == 422 # Due to Pydantic min_length validation
 
 def test_post_message_local_no_content_provided(client: TestClient):
     """Tests posting to local endpoint with no message content (Pydantic validation)."""
