@@ -103,7 +103,9 @@ class SecurityHeadersMiddleware:
             (b"permissions-policy", b"accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()"),
             # 🛡️ Sentinel: Prevent cross-origin resource sharing and cross-origin window opening for API isolation
             (b"cross-origin-resource-policy", b"same-origin"),
-            (b"cross-origin-opener-policy", b"same-origin")
+            (b"cross-origin-opener-policy", b"same-origin"),
+            # 🛡️ Sentinel: Ensure cross-origin isolation by requiring Cross-Origin-Resource-Policy for embeddings
+            (b"cross-origin-embedder-policy", b"require-corp")
         ]
 
     async def __call__(self, scope, receive, send):
