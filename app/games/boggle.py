@@ -1,4 +1,5 @@
-from random import choice, shuffle
+from random import shuffle
+from secrets import choice
 from typing import List, Tuple, Dict, Any
 
 # --- Constants ---
@@ -96,7 +97,7 @@ for size, config in BOGGLE_CONFIG.items():
 
 def _roll_dice_and_get_letters(dice_set_int: List[List[int]]) -> List[int]:
     """Rolls the dice and returns a list of letter numbers."""
-    return [choice(die) for die in dice_set_int]  # noqa: S311
+    return [choice(die) for die in dice_set_int]
 
 def generate_boggle_grids(size: int) -> Tuple[List[List[int]], List[List[int]]]:
     """
