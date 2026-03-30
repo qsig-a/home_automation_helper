@@ -67,6 +67,27 @@ async def lifespan(app: FastAPI):
         else:
             log.warning("Vestaboard connector not found during shutdown.")
 
+import time
+
+_rate_limit_lock = asyncio.Lock()
+_last_request_time = 0.0
+# 🛡️ Sentinel: Enforce a global rate limit of 1 request per 15 seconds for message/board updates
+# to protect the Vestaboard API from DoS and rate-limiting blocks.
+RATE_LIMIT_DELAY = 15.0
+
+async def rate_limiter():
+    global _last_request_time
+    async with _rate_limit_lock:
+        now = time.monotonic()
+        time_since_last = now - _last_request_time
+        if time_since_last < RATE_LIMIT_DELAY:
+            # Optionally sleep, or reject. We choose to reject to avoid hanging clients
+            raise HTTPException(
+                status_code=429,
+                detail=f"Rate limit exceeded. Try again in {RATE_LIMIT_DELAY - time_since_last:.1f} seconds."
+            )
+        _last_request_time = time.monotonic()
+
 async def get_vestaboard_connector(request: Request) -> VestaboardConnector:
     connector = getattr(request.app.state, "vestaboard_connector", None)
     if connector is None:
@@ -242,7 +263,8 @@ async def _schedule_end_boggle_display(grid: List[List[int]], conn: VestaboardCo
 async def start_boggle_game(
     item: BoggleClass,
     background_tasks: BackgroundTasks,
-    connector: VestaboardConnector = Depends(get_vestaboard_connector)
+    connector: VestaboardConnector = Depends(get_vestaboard_connector),
+    _: None = Depends(rate_limiter)
 ):
     if item.size not in (4, 5):
         raise HTTPException(status_code=400, detail="Invalid Boggle size. Must be 4 or 5.")
@@ -390,7 +412,8 @@ async def get_random_art_local(
 @app.post("/message", status_code=200)
 async def post_message(
     item: MessageClass,
-    connector: VestaboardConnector = Depends(get_vestaboard_connector)
+    connector: VestaboardConnector = Depends(get_vestaboard_connector),
+    _: None = Depends(rate_limiter)
 ) -> Dict[str, str]:
     # 🛡️ Sentinel: Removed manual length check in favor of structural Pydantic validation (min_length=1)
     await handle_vestaboard_action(
@@ -402,7 +425,8 @@ async def post_message(
 @app.post("/message/local", status_code=200)
 async def post_message_local(
     item: MessageClass,
-    connector: VestaboardConnector = Depends(get_vestaboard_connector)
+    connector: VestaboardConnector = Depends(get_vestaboard_connector),
+    _: None = Depends(rate_limiter)
 ) -> Dict[str, str]:
     # 🛡️ Sentinel: Removed manual length check in favor of structural Pydantic validation (min_length=1)
     await handle_vestaboard_action(
