@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import time
 from dataclasses import dataclass
 from typing import List, Dict, Callable, Awaitable, TypeVar, Generic, Any
 
@@ -66,8 +67,6 @@ async def lifespan(app: FastAPI):
             log.info("Vestaboard connector closed.")
         else:
             log.warning("Vestaboard connector not found during shutdown.")
-
-import time
 
 _rate_limit_lock = asyncio.Lock()
 _last_request_time = 0.0
@@ -334,7 +333,8 @@ _ART_LOCAL_CONFIG = ActionConfig(
 @app.get("/sfw_quote")
 async def get_sfw_quote(
     settings: Settings = Depends(get_settings),
-    connector: VestaboardConnector = Depends(get_vestaboard_connector)
+    connector: VestaboardConnector = Depends(get_vestaboard_connector),
+    _: None = Depends(rate_limiter)
 ) -> Dict[str, str]:
     return await get_and_send_quote(
         config=_SFW_QUOTE_CONFIG,
@@ -346,7 +346,8 @@ async def get_sfw_quote(
 async def get_sfw_quote_local(
     options: LocalBoardOptions = Depends(),
     settings: Settings = Depends(get_settings),
-    connector: VestaboardConnector = Depends(get_vestaboard_connector)
+    connector: VestaboardConnector = Depends(get_vestaboard_connector),
+    _: None = Depends(rate_limiter)
 ) -> Dict[str, str]:
     return await get_and_send_quote(
         config=_SFW_QUOTE_LOCAL_CONFIG,
@@ -360,7 +361,8 @@ async def get_sfw_quote_local(
 @app.get("/nsfw_quote")
 async def get_nsfw_quote(
     settings: Settings = Depends(get_settings),
-    connector: VestaboardConnector = Depends(get_vestaboard_connector)
+    connector: VestaboardConnector = Depends(get_vestaboard_connector),
+    _: None = Depends(rate_limiter)
 ) -> Dict[str, str]:
     return await get_and_send_quote(
         config=_NSFW_QUOTE_CONFIG,
@@ -372,7 +374,8 @@ async def get_nsfw_quote(
 async def get_nsfw_quote_local(
     options: LocalBoardOptions = Depends(),
     settings: Settings = Depends(get_settings),
-    connector: VestaboardConnector = Depends(get_vestaboard_connector)
+    connector: VestaboardConnector = Depends(get_vestaboard_connector),
+    _: None = Depends(rate_limiter)
 ) -> Dict[str, str]:
     return await get_and_send_quote(
         config=_NSFW_QUOTE_LOCAL_CONFIG,
@@ -386,7 +389,8 @@ async def get_nsfw_quote_local(
 @app.get("/art")
 async def get_random_art(
     settings: Settings = Depends(get_settings),
-    connector: VestaboardConnector = Depends(get_vestaboard_connector)
+    connector: VestaboardConnector = Depends(get_vestaboard_connector),
+    _: None = Depends(rate_limiter)
 ) -> Dict[str, str]:
     return await get_and_send_art(
         config=_ART_CONFIG,
@@ -398,7 +402,8 @@ async def get_random_art(
 async def get_random_art_local(
     options: LocalBoardOptions = Depends(),
     settings: Settings = Depends(get_settings),
-    connector: VestaboardConnector = Depends(get_vestaboard_connector)
+    connector: VestaboardConnector = Depends(get_vestaboard_connector),
+    _: None = Depends(rate_limiter)
 ) -> Dict[str, str]:
     return await get_and_send_art(
         config=_ART_LOCAL_CONFIG,
