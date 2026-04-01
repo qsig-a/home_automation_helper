@@ -1,5 +1,4 @@
-from random import shuffle
-from secrets import choice
+from secrets import choice, SystemRandom
 from typing import List, Tuple, Dict, Any
 
 # --- Constants ---
@@ -113,7 +112,8 @@ def generate_boggle_grids(size: int) -> Tuple[List[List[int]], List[List[int]]]:
     end_grid = [row[:] for row in config["end_template"]]
 
     letter_numbers = _roll_dice_and_get_letters(config["dice_int"])
-    shuffle(letter_numbers)
+    # 🛡️ Sentinel: Use cryptographically secure randomness to ensure unpredictable game states
+    SystemRandom().shuffle(letter_numbers)
 
     # Populate both grids concurrently using pre-calculated absolute placeholder indices
     for i, (r, c) in enumerate(config["abs_placeholders"]):
