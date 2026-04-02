@@ -146,6 +146,66 @@ class SecurityHeadersMiddleware:
 
 app.add_middleware(SecurityHeadersMiddleware)
 
+# 🛡️ Sentinel: Enforce a global payload size limit of 1MB to prevent resource exhaustion (DoS)
+# attacks from malicious clients sending excessively large request bodies.
+class PayloadSizeLimitMiddleware:
+    def __init__(self, app, max_upload_size: int = 1048576): # 1MB limit
+        self.app = app
+        self.max_upload_size = max_upload_size
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+
+        # Check Content-Length header first for early rejection
+        content_length = 0
+        for name, value in scope.get("headers", []):
+            if name.lower() == b"content-length":
+                try:
+                    content_length = int(value)
+                    if content_length > self.max_upload_size:
+                        await self._send_413(send)
+                        return
+                except ValueError:
+                    pass
+                break
+
+        # If Content-Length is missing or valid, track streamed bytes
+        received_bytes = 0
+        async def receive_wrapper():
+            nonlocal received_bytes
+            message = await receive()
+            if message["type"] == "http.request":
+                received_bytes += len(message.get("body", b""))
+                if received_bytes > self.max_upload_size:
+                    raise RuntimeError("Payload too large")
+            return message
+
+        try:
+            await self.app(scope, receive_wrapper, send)
+        except RuntimeError as e:
+            if str(e) == "Payload too large":
+                await self._send_413(send)
+                return
+            raise
+
+    async def _send_413(self, send):
+        response_body = b'{"detail": "Payload Too Large. Limit is 1MB."}'
+        await send({
+            "type": "http.response.start",
+            "status": 413,
+            "headers": [
+                (b"content-type", b"application/json"),
+                (b"content-length", str(len(response_body)).encode()),
+            ]
+        })
+        await send({
+            "type": "http.response.body",
+            "body": response_body,
+        })
+
+app.add_middleware(PayloadSizeLimitMiddleware)
+
 
 async def handle_vestaboard_action(
     action: Awaitable[T],
