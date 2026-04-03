@@ -144,7 +144,6 @@ class SecurityHeadersMiddleware:
 
         await self.app(scope, receive, send_wrapper)
 
-app.add_middleware(SecurityHeadersMiddleware)
 
 # 🛡️ Sentinel: Enforce a global payload size limit of 1MB to prevent resource exhaustion (DoS)
 # attacks from malicious clients sending excessively large request bodies.
@@ -204,7 +203,16 @@ class PayloadSizeLimitMiddleware:
             "body": response_body,
         })
 
+# 🛡️ Sentinel: Middleware order is critical for defense-in-depth.
+# In Starlette/FastAPI, middlewares wrap each other in reverse order of addition.
+# PayloadSizeLimitMiddleware must be added FIRST (so it is the inner layer),
+# and SecurityHeadersMiddleware added LAST (so it is the outermost layer).
+# This ensures that early error responses (like 413 Payload Too Large) generated
+# by inner middlewares still pass through the outer SecurityHeadersMiddleware
+# and receive the necessary security headers (CSP, HSTS, etc.) to prevent
+# vulnerabilities if the browser renders the error response.
 app.add_middleware(PayloadSizeLimitMiddleware)
+app.add_middleware(SecurityHeadersMiddleware)
 
 
 async def handle_vestaboard_action(
