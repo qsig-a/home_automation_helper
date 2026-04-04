@@ -80,10 +80,12 @@ async def rate_limiter():
         now = time.monotonic()
         time_since_last = now - _last_request_time
         if time_since_last < RATE_LIMIT_DELAY:
-            # Optionally sleep, or reject. We choose to reject to avoid hanging clients
+            wait_time = RATE_LIMIT_DELAY - time_since_last
+            # 🛡️ Sentinel: Include Retry-After header in 429 responses to ensure well-behaved clients back off properly
             raise HTTPException(
                 status_code=429,
-                detail=f"Rate limit exceeded. Try again in {RATE_LIMIT_DELAY - time_since_last:.1f} seconds."
+                detail=f"Rate limit exceeded. Try again in {wait_time:.1f} seconds.",
+                headers={"Retry-After": str(int(wait_time) + 1)}
             )
         _last_request_time = time.monotonic()
 
@@ -213,7 +215,6 @@ class PayloadSizeLimitMiddleware:
 # vulnerabilities if the browser renders the error response.
 app.add_middleware(PayloadSizeLimitMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
-
 
 async def handle_vestaboard_action(
     action: Awaitable[T],
