@@ -7,17 +7,20 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.12"
-requests = "2.32.3"
+requests = "^2.33.1"
 mysql-connector-python = "9.3.0"
 pydantic = "2.11.3"
 pydantic-settings = "2.9.1"
-fastapi = {version = "0.115.12", extras = ["standard"]}
+fastapi = "^0.135.3"
 httpx = "0.28.1"
+starlette = "^1.0.0"
+uvicorn = {extras = ["standard"], version = "^0.44.0"}
 
 [tool.poetry.group.dev.dependencies]
 pytest = "8.3.5"
 pytest-asyncio = "0.26.0"
 pytest-cov = "^7.1.0"
+pip-audit = "^2.10.0"
 
 [build-system]
 requires = ["poetry-core"]
