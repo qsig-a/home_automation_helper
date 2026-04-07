@@ -102,9 +102,9 @@ def init_db_pool(settings: Settings):
         )
         log.info("Database connection pool initialized.")
     except Error as err:
-        log.error(f"Error initializing connection pool: {err}")
+        log.error(f"Error initializing connection pool: {repr(err)}")
     except ValueError as verr:
-        log.error(f"Database configuration error for pool: {verr}")
+        log.error(f"Database configuration error for pool: {repr(verr)}")
 
 def close_db_pool():
     """Closes the database connection pool."""
@@ -128,13 +128,13 @@ def _db_connection(settings: Settings):
         cnx = _acquire_connection(settings)
         yield cnx
     except PoolError as err:
-        log.error(f"Error getting connection from pool: {err}")
+        log.error(f"Error getting connection from pool: {repr(err)}")
         raise ConnectionError(f"Database connection pool exhausted: {err}") from err
     except Error as err:
-        log.error(f"Error connecting to database: {err}")
+        log.error(f"Error connecting to database: {repr(err)}")
         raise ConnectionError(f"Database connection failed: {err}") from err
     except ValueError as verr:
-        log.error(f"Database configuration error (e.g., non-integer port): {verr}")
+        log.error(f"Database configuration error (e.g., non-integer port): {repr(verr)}")
         raise ConnectionError(f"Database configuration error: {verr}") from verr
     finally:
         if cnx and cnx.is_connected():
@@ -186,7 +186,7 @@ def _fetch_random_row(table_name: str, columns: tuple[str, ...], settings: Setti
                 return cur.fetchone()
     except Error as err:
         # 🛡️ Sentinel: Use repr() to prevent log injection.
-        log.error(f"Database query error in {repr(table_name)}: {err}")
+        log.error(f"Database query error in {repr(table_name)}: {repr(err)}")
         raise ConnectionError(f"Database query failed for {repr(table_name)}") from err
 
 # --- Public Functions ---
@@ -232,6 +232,6 @@ def GetSingleRandArt(settings: Settings) -> tuple[list[list[int]], str] | None:
                 log.warning("Art data is not a list.")
                 return None
         except ValueError as e:
-            log.error(f"Failed to decode art data: {e}")
+            log.error(f"Failed to decode art data: {repr(e)}")
             return None
     return None
