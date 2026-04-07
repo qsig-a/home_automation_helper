@@ -177,11 +177,12 @@ class TestPoolFunctions:
     @patch("app.sayings.sayings.pooling.MySQLConnectionPool")
     @patch("app.sayings.sayings.log.error")
     def test_init_db_pool_mysql_error(self, mock_log_error, mock_pool, mock_settings_db_enabled):
-        mock_pool.side_effect = mysql.connector.Error("Simulated pool initialization error")
+        err = mysql.connector.Error("Simulated pool initialization error")
+        mock_pool.side_effect = err
         say._connection_pool = None
         say._db_configured_cache = None
         init_db_pool(mock_settings_db_enabled)
-        mock_log_error.assert_called_once_with("Error initializing connection pool: Simulated pool initialization error")
+        mock_log_error.assert_called_once_with(f"Error initializing connection pool: {repr(err)}")
         assert say._connection_pool is None
 
     @patch("app.sayings.sayings.log.error")
@@ -196,11 +197,12 @@ class TestPoolFunctions:
     @patch("app.sayings.sayings.pooling.MySQLConnectionPool")
     @patch("app.sayings.sayings.log.error")
     def test_init_db_pool_value_error(self, mock_log_error, mock_pool, mock_settings_db_enabled):
-        mock_pool.side_effect = ValueError("Simulated ValueError")
+        err = ValueError("Simulated ValueError")
+        mock_pool.side_effect = err
         say._connection_pool = None
         say._db_configured_cache = None
         init_db_pool(mock_settings_db_enabled)
-        mock_log_error.assert_called_once_with("Database configuration error for pool: Simulated ValueError")
+        mock_log_error.assert_called_once_with(f"Database configuration error for pool: {repr(err)}")
         assert say._connection_pool is None
 
 class TestArtFunctions:
