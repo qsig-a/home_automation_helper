@@ -69,16 +69,28 @@ async def lifespan(app: FastAPI):
             log.warning("Vestaboard connector not found during shutdown.")
 
 _rate_limit_lock = asyncio.Lock()
-_last_request_time = 0.0
-# 🛡️ Sentinel: Enforce a global rate limit of 1 request per 15 seconds for message/board updates
+_client_request_times: Dict[str, float] = {}
+# 🛡️ Sentinel: Enforce a rate limit of 1 request per 15 seconds per client IP for message/board updates
 # to protect the Vestaboard API from DoS and rate-limiting blocks.
 RATE_LIMIT_DELAY = 15.0
 
-async def rate_limiter():
-    global _last_request_time
+async def rate_limiter(request: Request):
+    global _client_request_times
     async with _rate_limit_lock:
         now = time.monotonic()
-        time_since_last = now - _last_request_time
+
+        # 🛡️ Sentinel: Dynamically clean up old entries to prevent memory exhaustion
+        _client_request_times = {
+            ip: req_time
+            for ip, req_time in _client_request_times.items()
+            if now - req_time < RATE_LIMIT_DELAY
+        }
+
+        client_ip = request.client.host if request.client else "unknown"
+
+        last_request_time = _client_request_times.get(client_ip, 0.0)
+        time_since_last = now - last_request_time
+
         if time_since_last < RATE_LIMIT_DELAY:
             wait_time = RATE_LIMIT_DELAY - time_since_last
             # 🛡️ Sentinel: Include Retry-After header in 429 responses to ensure well-behaved clients back off properly
@@ -87,7 +99,10 @@ async def rate_limiter():
                 detail=f"Rate limit exceeded. Try again in {wait_time:.1f} seconds.",
                 headers={"Retry-After": str(int(wait_time) + 1)}
             )
-        _last_request_time = time.monotonic()
+
+        # 🛡️ Sentinel: Tracking state per client IP rather than globally prevents a single
+        # client from causing a denial of service (DoS) for all other users.
+        _client_request_times[client_ip] = now
 
 async def get_vestaboard_connector(request: Request) -> VestaboardConnector:
     connector = getattr(request.app.state, "vestaboard_connector", None)
