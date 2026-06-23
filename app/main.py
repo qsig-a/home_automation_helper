@@ -71,21 +71,26 @@ async def lifespan(app: FastAPI):
 
 _rate_limit_lock = asyncio.Lock()
 _client_request_times: Dict[str, float] = {}
+_last_cleanup_time: float = 0.0
 # 🛡️ Sentinel: Enforce a rate limit of 1 request per 15 seconds per client IP for message/board updates
 # to protect the Vestaboard API from DoS and rate-limiting blocks.
 RATE_LIMIT_DELAY = 15.0
 
 async def rate_limiter(request: Request):
-    global _client_request_times
+    global _client_request_times, _last_cleanup_time
     async with _rate_limit_lock:
         now = time.monotonic()
 
         # 🛡️ Sentinel: Dynamically clean up old entries to prevent memory exhaustion
-        _client_request_times = {
-            ip: req_time
-            for ip, req_time in _client_request_times.items()
-            if now - req_time < RATE_LIMIT_DELAY
-        }
+        # ⚡ Bolt: Only rebuild the dictionary periodically (every RATE_LIMIT_DELAY seconds)
+        # instead of on every single request to prevent CPU starvation under high load.
+        if now - _last_cleanup_time > RATE_LIMIT_DELAY:
+            _client_request_times = {
+                ip: req_time
+                for ip, req_time in _client_request_times.items()
+                if now - req_time < RATE_LIMIT_DELAY
+            }
+            _last_cleanup_time = now
 
         client_ip = request.client.host if request.client else "unknown"
 
