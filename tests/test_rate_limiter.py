@@ -10,6 +10,7 @@ def reset_rate_limiter_state():
     """Reset the global state dictionary before each test execution to ensure tests run in isolation."""
     import app.main
     app.main._client_request_times.clear()
+    app.main._last_cleanup_time = 0.0
     yield
 
 @pytest.mark.asyncio
