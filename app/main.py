@@ -2,13 +2,15 @@
 
 import asyncio
 import logging
-from typing import List, Dict, Callable, Awaitable, TypeVar, Optional
+import time
+from dataclasses import dataclass
+from typing import List, Dict, Callable, Awaitable, TypeVar, Generic, Any
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends, Request
 from contextlib import asynccontextmanager
 
 from app.config import Settings, get_settings
-from app.models import MessageClass, BoggleClass
+from app.models import MessageClass, BoggleClass, LocalBoardOptions
 import app.games.boggle as bg
 import app.sayings.sayings as say
 from app.connectors.vestaboard import (
@@ -18,6 +20,7 @@ from app.connectors.vestaboard import (
     VestaboardInvalidCharsError,
     VestaboardFingerprintError
 )
+from app.middleware.security import SecurityHeadersMiddleware
 
 # How many times to re-draw a random quote/art when the board already
 # displays an identical message (RW API FingerprintMatch / HTTP 409).
@@ -26,7 +29,26 @@ MAX_FINGERPRINT_RETRIES = 3
 log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
+class UvicornInfoFilter(logging.Filter):
+    def filter(self, record):
+        if record.name == "uvicorn.error" and record.levelno < logging.WARNING:
+            record.name = "uvicorn.info"
+        return True
+
+_uvicorn_filter = UvicornInfoFilter()
+for handler in logging.root.handlers:
+    handler.addFilter(_uvicorn_filter)
+logging.getLogger("uvicorn.error").addFilter(_uvicorn_filter)
+
 T = TypeVar('T')
+T_Data = TypeVar('T_Data')
+
+@dataclass
+class ActionConfig(Generic[T_Data]):
+    func: Callable[[Settings], T_Data]
+    success_message: str
+    error_message: str
+    source: str = 'rw'
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -36,14 +58,62 @@ async def lifespan(app: FastAPI):
         connector = VestaboardConnector(settings)
         app.state.vestaboard_connector = connector
         log.info("Vestaboard connector initialized.")
+
+        log.info("Application startup: Initializing database connection pool...")
+        say.init_db_pool(settings)
+
         yield
     finally:
+        log.info("Application shutdown: Closing database connection pool...")
+        say.close_db_pool()
+
         log.info("Application shutdown: Closing Vestaboard connector...")
         if hasattr(app.state, 'vestaboard_connector') and app.state.vestaboard_connector:
             await app.state.vestaboard_connector.close()
             log.info("Vestaboard connector closed.")
         else:
             log.warning("Vestaboard connector not found during shutdown.")
+
+_rate_limit_lock = asyncio.Lock()
+_client_request_times: Dict[str, float] = {}
+_last_cleanup_time: float = 0.0
+# 🛡️ Sentinel: Enforce a rate limit of 1 request per 15 seconds per client IP for message/board updates
+# to protect the Vestaboard API from DoS and rate-limiting blocks.
+RATE_LIMIT_DELAY = 15.0
+
+async def rate_limiter(request: Request):
+    global _client_request_times, _last_cleanup_time
+    async with _rate_limit_lock:
+        now = time.monotonic()
+
+        # 🛡️ Sentinel: Dynamically clean up old entries to prevent memory exhaustion
+        # ⚡ Bolt: Only rebuild the dictionary periodically (every RATE_LIMIT_DELAY seconds)
+        # instead of on every single request to prevent CPU starvation under high load.
+        if now - _last_cleanup_time > RATE_LIMIT_DELAY:
+            _client_request_times = {
+                ip: req_time
+                for ip, req_time in _client_request_times.items()
+                if now - req_time < RATE_LIMIT_DELAY
+            }
+            _last_cleanup_time = now
+
+        client_ip = request.client.host if request.client else "unknown"
+
+        last_request_time = _client_request_times.get(client_ip, 0.0)
+        time_since_last = now - last_request_time
+
+        if time_since_last < RATE_LIMIT_DELAY:
+            wait_time = RATE_LIMIT_DELAY - time_since_last
+            # 🛡️ Sentinel: Include Retry-After header in 429 responses to ensure well-behaved clients back off properly
+            raise HTTPException(
+                status_code=429,
+                detail=f"Rate limit exceeded. Try again in {wait_time:.1f} seconds.",
+                headers={"Retry-After": str(int(wait_time) + 1)}
+            )
+
+        # 🛡️ Sentinel: Tracking state per client IP rather than globally prevents a single
+        # client from causing a denial of service (DoS) for all other users.
+        _client_request_times[client_ip] = now
 
 async def get_vestaboard_connector(request: Request) -> VestaboardConnector:
     connector = getattr(request.app.state, "vestaboard_connector", None)
@@ -58,12 +128,81 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# 🛡️ Sentinel: Enforce a global payload size limit of 1MB to prevent resource exhaustion (DoS)
+# attacks from malicious clients sending excessively large request bodies.
+class PayloadSizeLimitMiddleware:
+    def __init__(self, app, max_upload_size: int = 1048576): # 1MB limit
+        self.app = app
+        self.max_upload_size = max_upload_size
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+
+        # Check Content-Length header first for early rejection
+        content_length = 0
+        for name, value in scope.get("headers", []):
+            if name.lower() == b"content-length":
+                try:
+                    content_length = int(value)
+                    if content_length > self.max_upload_size:
+                        await self._send_413(send)
+                        return
+                except ValueError:
+                    pass
+                break
+
+        # If Content-Length is missing or valid, track streamed bytes
+        received_bytes = 0
+        async def receive_wrapper():
+            nonlocal received_bytes
+            message = await receive()
+            if message["type"] == "http.request":
+                received_bytes += len(message.get("body", b""))
+                if received_bytes > self.max_upload_size:
+                    raise RuntimeError("Payload too large")
+            return message
+
+        try:
+            await self.app(scope, receive_wrapper, send)
+        except RuntimeError as e:
+            if str(e) == "Payload too large":
+                await self._send_413(send)
+                return
+            raise
+
+    async def _send_413(self, send):
+        response_body = b'{"detail": "Payload Too Large. Limit is 1MB."}'
+        await send({
+            "type": "http.response.start",
+            "status": 413,
+            "headers": [
+                (b"content-type", b"application/json"),
+                (b"content-length", str(len(response_body)).encode()),
+            ]
+        })
+        await send({
+            "type": "http.response.body",
+            "body": response_body,
+        })
+
+# 🛡️ Sentinel: Middleware order is critical for defense-in-depth.
+# In Starlette/FastAPI, middlewares wrap each other in reverse order of addition.
+# PayloadSizeLimitMiddleware must be added FIRST (so it is the inner layer),
+# and SecurityHeadersMiddleware added LAST (so it is the outermost layer).
+# This ensures that early error responses (like 413 Payload Too Large) generated
+# by inner middlewares still pass through the outer SecurityHeadersMiddleware
+# and receive the necessary security headers (CSP, HSTS, etc.) to prevent
+# vulnerabilities if the browser renders the error response.
+app.add_middleware(PayloadSizeLimitMiddleware)
+app.add_middleware(SecurityHeadersMiddleware)
+
 async def handle_vestaboard_action(
-    action: Callable[[], Awaitable[T]],
+    action: Awaitable[T],
     error_prefix: str
 ) -> T:
     try:
-        return await action()
+        return await action
     except VestaboardInvalidCharsError as e:
         log.warning(f"{error_prefix}: Invalid characters. {e}")
         raise HTTPException(status_code=422, detail=f"{error_prefix}: Invalid characters. {e}")
@@ -82,116 +221,125 @@ async def handle_vestaboard_action(
         raise HTTPException(status_code=500, detail=f"{error_prefix}: An unexpected internal error occurred.")
 
 
-async def get_and_send_quote(
-    quote_func: Callable[[Settings], str | None],
-    success_message: str,
-    error_message: str,
+async def _get_and_send_base(
+    config: ActionConfig[T_Data],
     settings: Settings,
     connector: VestaboardConnector,
-    source: str = 'rw',
+    send_method_name: str,
+    process_result: Callable[[T_Data], tuple[Any, Dict[str, str]]],
     **kwargs
 ) -> Dict[str, str]:
     try:
+        send_method = getattr(connector, send_method_name)
+
         # The board rejects a message identical to what it already shows
-        # (FingerprintMatch). Since these endpoints serve a *random* quote,
-        # re-draw a different one and retry a few times before giving up.
+        # (FingerprintMatch / HTTP 409). Since these endpoints serve *random*
+        # content, re-draw a different item and retry a few times before giving up.
+        extra_response: Dict[str, str] = {}
         for attempt in range(1, MAX_FINGERPRINT_RETRIES + 1):
-            data = await asyncio.to_thread(quote_func, settings=settings)
-            if data is None:
-                log.warning(f"{error_message}: Quote function returned None (DB disabled or no quote found).")
-                raise HTTPException(status_code=404, detail=f"{error_message}: Quote not found or DB disabled")
+            result = await asyncio.to_thread(config.func, settings=settings)
+            if result is None:
+                log.warning(f"{config.error_message}: Function returned None (DB disabled or no data found).")
+                raise HTTPException(status_code=404, detail=f"{config.error_message}: Data not found or DB disabled")
+
+            data, extra_response = process_result(result)
 
             try:
                 await handle_vestaboard_action(
-                    lambda: connector.send_message(data, source=source, **kwargs),
-                    error_message
+                    send_method(data, source=config.source, **kwargs),
+                    config.error_message
                 )
             except VestaboardFingerprintError:
                 log.info(
-                    f"{success_message}: quote already displayed "
+                    f"{config.success_message}: already displayed "
                     f"(attempt {attempt}/{MAX_FINGERPRINT_RETRIES}); re-rolling."
                 )
                 continue
 
-            log.info(f"Successfully sent quote to board: {success_message}")
-            return {"message": success_message}
+            log.info(f"Successfully sent to board: {config.success_message}")
+            response = {"message": config.success_message}
+            response.update(extra_response)
+            return response
 
         # Every re-roll matched the board. Report gracefully, not as an error.
         log.warning(
-            f"{error_message}: gave up after {MAX_FINGERPRINT_RETRIES} attempts; "
-            "quote already displayed on board."
+            f"{config.error_message}: gave up after {MAX_FINGERPRINT_RETRIES} attempts; "
+            "content already displayed on board."
         )
-        return {"message": f"{success_message} (quote already displayed on board; no change made)"}
+        response = {"message": f"{config.success_message} (already displayed on board; no change made)"}
+        response.update(extra_response)
+        return response
     except HTTPException:
         raise
     except ConnectionError as e:
-        log.error(f"Database connection error getting quote: {e}", exc_info=True)
-        raise HTTPException(status_code=503, detail=f"{error_message}: Database unavailable")
+        log.error(f"Database connection error: {e}", exc_info=True)
+        raise HTTPException(status_code=503, detail=f"{config.error_message}: Database unavailable")
     except Exception as e:
-        log.exception(f"Unexpected error in quote process: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"{error_message}: An unexpected internal error occurred")
+        log.exception(f"Unexpected error process: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"{config.error_message}: An unexpected internal error occurred")
 
-async def get_and_send_art(
-    art_func: Callable[[Settings], List[List[int]] | tuple[List[List[int]], str] | None],
-    success_message: str,
-    error_message: str,
+def _process_quote(result: str) -> tuple[str, Dict[str, str]]:
+    return result, {}
+
+async def get_and_send_quote(
+    config: ActionConfig[str | None],
     settings: Settings,
     connector: VestaboardConnector,
-    source: str = 'rw',
     **kwargs
 ) -> Dict[str, str]:
+    return await _get_and_send_base(
+        config=config,
+        settings=settings,
+        connector=connector,
+        send_method_name="send_message",
+        process_result=_process_quote,
+        **kwargs
+    )
+
+def _process_art(result) -> tuple[List[List[int]], Dict[str, str]]:
+    title = "Unknown"
+    if isinstance(result, tuple):
+        data, fetched_title = result
+        if fetched_title:
+            title = fetched_title
+    else:
+        data = result
+    return data, {"title": title}
+
+async def get_and_send_art(
+    config: ActionConfig[List[List[int]] | tuple[List[List[int]], str] | None],
+    settings: Settings,
+    connector: VestaboardConnector,
+    **kwargs
+) -> Dict[str, str]:
+    return await _get_and_send_base(
+        config=config,
+        settings=settings,
+        connector=connector,
+        send_method_name="send_array",
+        process_result=_process_art,
+        **kwargs
+    )
+
+
+# ⚡ Bolt: Extracted `_schedule_end_boggle_display` to module level.
+# Defining async closures inside high-throughput route handlers forces Python to allocate
+# a new function object on every request. Moving it here eliminates that overhead.
+async def _schedule_end_boggle_display(grid: List[List[int]], conn: VestaboardConnector):
+    await asyncio.sleep(200)
+    log.info("Boggle timer finished. Sending end grid.")
     try:
-        # As with quotes, re-draw a different random art piece if the board
-        # already displays an identical one (FingerprintMatch).
-        for attempt in range(1, MAX_FINGERPRINT_RETRIES + 1):
-            result = await asyncio.to_thread(art_func, settings=settings)
-            if result is None:
-                log.warning(f"{error_message}: Art function returned None (DB disabled or no art found).")
-                raise HTTPException(status_code=404, detail=f"{error_message}: Art not found or DB disabled")
-
-            title = "Unknown"
-            if isinstance(result, tuple):
-                data, fetched_title = result
-                if fetched_title:
-                    title = fetched_title
-            else:
-                data = result
-
-            try:
-                await handle_vestaboard_action(
-                    lambda: connector.send_array(data, source=source, **kwargs),
-                    error_message
-                )
-            except VestaboardFingerprintError:
-                log.info(
-                    f"{success_message}: art already displayed "
-                    f"(attempt {attempt}/{MAX_FINGERPRINT_RETRIES}); re-rolling."
-                )
-                continue
-
-            log.info(f"Successfully sent art to board: {success_message}")
-            return {"message": success_message, "title": title}
-
-        log.warning(
-            f"{error_message}: gave up after {MAX_FINGERPRINT_RETRIES} attempts; "
-            "art already displayed on board."
-        )
-        return {"message": f"{success_message} (art already displayed on board; no change made)", "title": "Unknown"}
-    except HTTPException:
-        raise
-    except ConnectionError as e:
-        log.error(f"Database connection error getting art: {e}", exc_info=True)
-        raise HTTPException(status_code=503, detail=f"{error_message}: Database unavailable")
+        await conn.send_array(grid, source='rw')
+        log.info("Successfully sent Boggle end grid.")
     except Exception as e:
-        log.exception(f"Unexpected error in art process: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"{error_message}: An unexpected internal error occurred")
-
+        log.error(f"Error sending Boggle end grid in background task: {e}", exc_info=True)
 
 @app.post("/games/boggle", status_code=202)
 async def start_boggle_game(
     item: BoggleClass,
     background_tasks: BackgroundTasks,
-    connector: VestaboardConnector = Depends(get_vestaboard_connector)
+    connector: VestaboardConnector = Depends(get_vestaboard_connector),
+    _: None = Depends(rate_limiter)
 ):
     if item.size not in (4, 5):
         raise HTTPException(status_code=400, detail="Invalid Boggle size. Must be 4 or 5.")
@@ -202,136 +350,155 @@ async def start_boggle_game(
         log.exception(f"Error generating Boggle grids: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Error creating game grids")
 
-    async def schedule_end_boggle_display(grid: List[List[int]], conn: VestaboardConnector):
-        await asyncio.sleep(200)
-        log.info("Boggle timer finished. Sending end grid.")
-        try:
-            await conn.send_array(grid, source='rw')
-            log.info("Successfully sent Boggle end grid.")
-        except Exception as e:
-            log.error(f"Error sending Boggle end grid in background task: {e}", exc_info=True)
-
     await handle_vestaboard_action(
-        lambda: connector.send_array(start_grid, source='rw'),
+        connector.send_array(start_grid, source='rw'),
         f"Vestaboard error initiating Boggle {item.size}x{item.size} game"
     )
 
-    background_tasks.add_task(schedule_end_boggle_display, end_grid, connector)
+    background_tasks.add_task(_schedule_end_boggle_display, end_grid, connector)
     return {"message": f"Boggle {item.size}x{item.size} game queued."}
+
+
+# ⚡ Bolt: Pre-instantiate ActionConfig objects at module load time.
+# Previously, these dataclasses were instantiated inline on every single GET request.
+# By making them module-level constants, we eliminate object allocation overhead
+# on the hot path for these six endpoints.
+_SFW_QUOTE_CONFIG = ActionConfig(
+    func=say.GetSingleRandSfwS,
+    success_message="Random SFW quote queued",
+    error_message="Error getting SFW quote",
+    source='rw'
+)
+
+_SFW_QUOTE_LOCAL_CONFIG = ActionConfig(
+    func=say.GetSingleRandSfwS,
+    success_message="Random SFW quote queued (Local)",
+    error_message="Error getting SFW quote",
+    source='local'
+)
+
+_NSFW_QUOTE_CONFIG = ActionConfig(
+    func=say.GetSingleRandNsfwS,
+    success_message="Random NSFW quote queued",
+    error_message="Error getting NSFW quote",
+    source='rw'
+)
+
+_NSFW_QUOTE_LOCAL_CONFIG = ActionConfig(
+    func=say.GetSingleRandNsfwS,
+    success_message="Random NSFW quote queued (Local)",
+    error_message="Error getting NSFW quote",
+    source='local'
+)
+
+_ART_CONFIG = ActionConfig(
+    func=say.GetSingleRandArt,
+    success_message="Random art queued",
+    error_message="Error getting art",
+    source='rw'
+)
+
+_ART_LOCAL_CONFIG = ActionConfig(
+    func=say.GetSingleRandArt,
+    success_message="Random art queued (Local)",
+    error_message="Error getting art",
+    source='local'
+)
 
 
 @app.get("/sfw_quote")
 async def get_sfw_quote(
     settings: Settings = Depends(get_settings),
-    connector: VestaboardConnector = Depends(get_vestaboard_connector)
+    connector: VestaboardConnector = Depends(get_vestaboard_connector),
+    _: None = Depends(rate_limiter)
 ) -> Dict[str, str]:
     return await get_and_send_quote(
-        quote_func=say.GetSingleRandSfwS,
-        success_message="Random SFW quote queued",
-        error_message="Error getting SFW quote",
+        config=_SFW_QUOTE_CONFIG,
         settings=settings,
-        connector=connector,
-        source='rw'
+        connector=connector
     )
 
 @app.get("/sfw_quote/local")
 async def get_sfw_quote_local(
-    strategy: Optional[str] = None,
-    step_interval_ms: Optional[int] = None,
-    step_size: Optional[int] = None,
+    options: LocalBoardOptions = Depends(),
     settings: Settings = Depends(get_settings),
-    connector: VestaboardConnector = Depends(get_vestaboard_connector)
+    connector: VestaboardConnector = Depends(get_vestaboard_connector),
+    _: None = Depends(rate_limiter)
 ) -> Dict[str, str]:
     return await get_and_send_quote(
-        quote_func=say.GetSingleRandSfwS,
-        success_message="Random SFW quote queued (Local)",
-        error_message="Error getting SFW quote",
+        config=_SFW_QUOTE_LOCAL_CONFIG,
         settings=settings,
         connector=connector,
-        source='local',
-        strategy=strategy,
-        step_interval_ms=step_interval_ms,
-        step_size=step_size
+        strategy=options.strategy,
+        step_interval_ms=options.step_interval_ms,
+        step_size=options.step_size
     )
 
 @app.get("/nsfw_quote")
 async def get_nsfw_quote(
     settings: Settings = Depends(get_settings),
-    connector: VestaboardConnector = Depends(get_vestaboard_connector)
+    connector: VestaboardConnector = Depends(get_vestaboard_connector),
+    _: None = Depends(rate_limiter)
 ) -> Dict[str, str]:
     return await get_and_send_quote(
-        quote_func=say.GetSingleRandNsfwS,
-        success_message="Random NSFW quote queued",
-        error_message="Error getting NSFW quote",
+        config=_NSFW_QUOTE_CONFIG,
         settings=settings,
-        connector=connector,
-        source='rw'
+        connector=connector
     )
 
 @app.get("/nsfw_quote/local")
 async def get_nsfw_quote_local(
-    strategy: Optional[str] = None,
-    step_interval_ms: Optional[int] = None,
-    step_size: Optional[int] = None,
+    options: LocalBoardOptions = Depends(),
     settings: Settings = Depends(get_settings),
-    connector: VestaboardConnector = Depends(get_vestaboard_connector)
+    connector: VestaboardConnector = Depends(get_vestaboard_connector),
+    _: None = Depends(rate_limiter)
 ) -> Dict[str, str]:
     return await get_and_send_quote(
-        quote_func=say.GetSingleRandNsfwS,
-        success_message="Random NSFW quote queued (Local)",
-        error_message="Error getting NSFW quote",
+        config=_NSFW_QUOTE_LOCAL_CONFIG,
         settings=settings,
         connector=connector,
-        source='local',
-        strategy=strategy,
-        step_interval_ms=step_interval_ms,
-        step_size=step_size
+        strategy=options.strategy,
+        step_interval_ms=options.step_interval_ms,
+        step_size=options.step_size
     )
 
 @app.get("/art")
 async def get_random_art(
     settings: Settings = Depends(get_settings),
-    connector: VestaboardConnector = Depends(get_vestaboard_connector)
+    connector: VestaboardConnector = Depends(get_vestaboard_connector),
+    _: None = Depends(rate_limiter)
 ) -> Dict[str, str]:
     return await get_and_send_art(
-        art_func=say.GetSingleRandArt,
-        success_message="Random art queued",
-        error_message="Error getting art",
+        config=_ART_CONFIG,
         settings=settings,
-        connector=connector,
-        source='rw'
+        connector=connector
     )
 
 @app.get("/art/local")
 async def get_random_art_local(
-    strategy: Optional[str] = None,
-    step_interval_ms: Optional[int] = None,
-    step_size: Optional[int] = None,
+    options: LocalBoardOptions = Depends(),
     settings: Settings = Depends(get_settings),
-    connector: VestaboardConnector = Depends(get_vestaboard_connector)
+    connector: VestaboardConnector = Depends(get_vestaboard_connector),
+    _: None = Depends(rate_limiter)
 ) -> Dict[str, str]:
     return await get_and_send_art(
-        art_func=say.GetSingleRandArt,
-        success_message="Random art queued (Local)",
-        error_message="Error getting art",
+        config=_ART_LOCAL_CONFIG,
         settings=settings,
         connector=connector,
-        source='local',
-        strategy=strategy,
-        step_interval_ms=step_interval_ms,
-        step_size=step_size
+        strategy=options.strategy,
+        step_interval_ms=options.step_interval_ms,
+        step_size=options.step_size
     )
 
 @app.post("/message", status_code=200)
 async def post_message(
     item: MessageClass,
-    connector: VestaboardConnector = Depends(get_vestaboard_connector)
+    connector: VestaboardConnector = Depends(get_vestaboard_connector),
+    _: None = Depends(rate_limiter)
 ) -> Dict[str, str]:
-    if not item.message:
-        raise HTTPException(status_code=400, detail="No message content provided.")
-
+    # 🛡️ Sentinel: Removed manual length check in favor of structural Pydantic validation (min_length=1)
     await handle_vestaboard_action(
-        lambda: connector.send_message(item.message, source='rw'),
+        connector.send_message(item.message, source='rw'),
         "Error sending message"
     )
     return {"message": "Message sent successfully"}
@@ -339,13 +506,12 @@ async def post_message(
 @app.post("/message/local", status_code=200)
 async def post_message_local(
     item: MessageClass,
-    connector: VestaboardConnector = Depends(get_vestaboard_connector)
+    connector: VestaboardConnector = Depends(get_vestaboard_connector),
+    _: None = Depends(rate_limiter)
 ) -> Dict[str, str]:
-    if not item.message:
-        raise HTTPException(status_code=400, detail="No message content provided.")
-
+    # 🛡️ Sentinel: Removed manual length check in favor of structural Pydantic validation (min_length=1)
     await handle_vestaboard_action(
-        lambda: connector.send_message(
+        connector.send_message(
             item.message,
             source='local',
             strategy=item.strategy,

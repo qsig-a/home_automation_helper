@@ -3,7 +3,7 @@
 import httpx
 import re
 import logging
-from typing import Optional, List, Dict, Any, Union
+from typing import List, Dict, Any, Union
 
 # Import central settings configuration
 from app.config import Settings
@@ -47,6 +47,15 @@ CHAR_CODE_MAP = {
     ';': 49, ':': 50, "'": 52, '"': 53, '%': 54, ',': 55, '.': 56, '/': 59, '?': 60, '°': 62
 }
 
+# ⚡ Bolt: Precomputed lookup array for converting byte values directly to Vestaboard
+# character codes. Indexed by the character's ord() value, drastically reducing method
+# lookup overhead in loops from O(1) hashing to direct array access.
+_char_code_list = [0] * 256
+for char, code in CHAR_CODE_MAP.items():
+    if ord(char) < 256:
+        _char_code_list[ord(char)] = code
+_CHAR_CODE_ARRAY = tuple(_char_code_list)
+
 class VestaboardConnector:
     """
     An asynchronous connector for interacting with the Vestaboard API.
@@ -54,8 +63,8 @@ class VestaboardConnector:
     """
     def __init__(self, settings: Settings):
         self._settings = settings
-        self._rw_api_key = settings.vestaboard_rw_api_key
-        self._local_api_key = settings.vestaboard_local_api_key
+        self._rw_api_key = settings.vestaboard_rw_api_key.get_secret_value() if settings.vestaboard_rw_api_key else None
+        self._local_api_key = settings.vestaboard_local_api_key.get_secret_value() if settings.vestaboard_local_api_key else None
         self._local_api_ip = settings.vestaboard_local_api_ip
 
         # RW API Client
@@ -98,32 +107,46 @@ class VestaboardConnector:
         """
         Converts a text string into a 6x22 integer array for Vestaboard.
         """
-        rows = 6
-        cols = 22
-        board = [[0] * cols for _ in range(rows)]
+        # ⚡ Bolt: Optimized text-to-array conversion by using a flat pre-allocated
+        # list and a single index instead of tracking rows and columns. This preserves
+        # the O(1) early exit (max 132 chars) but avoids complex coordinate tracking.
+        # By using a direct array lookup `_CHAR_CODE_ARRAY[ord(char)]` for ASCII/Latin-1
+        # characters, we bypass dictionary hashing completely and maintain peak performance,
+        # while safely falling back to 0 (space) for unsupported unicode characters.
+        #
+        # ⚡ Bolt: Further optimized by localizing `_CHAR_CODE_ARRAY` and `ord` lookups
+        # outside the loop, avoiding global/builtin overhead on every iteration.
+        codes = [0] * 132
+        idx = 0
 
-        row = 0
-        col = 0
+        char_array = _CHAR_CODE_ARRAY
+        _ord = ord
 
         for char in text:
-            if row >= rows:
-                break
-
             if char == '\n':
-                row += 1
-                col = 0
+                # Fast forward to the start of the next line (multiple of 22)
+                idx = (idx // 22 + 1) * 22
+                if idx >= 132:
+                    break
                 continue
 
-            code = CHAR_CODE_MAP.get(char, 0) # Default to blank (0) if unknown
+            o = _ord(char)
+            if o < 256:
+                codes[idx] = char_array[o]
+            idx += 1
 
-            board[row][col] = code
-            col += 1
+            if idx >= 132:
+                break
 
-            if col >= cols:
-                col = 0
-                row += 1
-
-        return board
+        # Slice into 6x22 chunks (Python C-level list slicing is incredibly fast)
+        return [
+            codes[0:22],
+            codes[22:44],
+            codes[44:66],
+            codes[66:88],
+            codes[88:110],
+            codes[110:132]
+        ]
 
     async def _post_rw(self, data: Union[Dict[str, Any], List[List[int]]]):
         """Helper to POST to RW API."""
@@ -140,7 +163,8 @@ class VestaboardConnector:
             response.raise_for_status()
             log.info("Successfully sent message via RW API.")
         except httpx.HTTPStatusError as e:
-            log.error(f"RW API HTTP error: {e.response.status_code} - {e.response.text}")
+            # 🛡️ Sentinel: Wrap external untrusted response text in repr() to prevent log injection (CRLF)
+            log.error(f"RW API HTTP error: {e.response.status_code} - {repr(e.response.text)}")
             # A 409 means the rendered board matches what's already displayed
             # (FingerprintMatch). This is benign, so surface it distinctly.
             if e.response.status_code == 409:
@@ -167,7 +191,8 @@ class VestaboardConnector:
             response.raise_for_status()
             log.info("Successfully sent message via Local API.")
         except httpx.HTTPStatusError as e:
-            log.error(f"Local API HTTP error: {e.response.status_code} - {e.response.text}")
+            # 🛡️ Sentinel: Wrap external untrusted response text in repr() to prevent log injection (CRLF)
+            log.error(f"Local API HTTP error: {e.response.status_code} - {repr(e.response.text)}")
             raise VestaboardError(f"Local API error: {e.response.status_code}") from e
         except httpx.RequestError as e:
             log.error(f"Local API network error: {e}")
@@ -179,8 +204,8 @@ class VestaboardConnector:
         """
         string_text = str(text)
         if not VALID_CHARS_REGEX.match(string_text):
-             log.warning(f"Message contains invalid characters: '{string_text}'")
-             raise VestaboardInvalidCharsError(f"Message contains invalid characters.")
+             log.warning(f"Message contains invalid characters: {repr(string_text)}")
+             raise VestaboardInvalidCharsError("Message contains invalid characters.")
 
         if source == 'local':
             # Local API only accepts arrays
@@ -199,23 +224,19 @@ class VestaboardConnector:
              raise TypeError("Input 'characters' must be a list.")
 
         if source == 'local':
-            # Local API supports transitions
+            # Local API supports transitions.
+            # Simplified payload construction using dictionary comprehension to filter
+            # for transition options, improving readability and maintainability.
+            # Transition keys: strategy, step_interval_ms, step_size.
+            options = {
+                k: v for k, v in kwargs.items()
+                if k in {'strategy', 'step_interval_ms', 'step_size'} and v is not None
+            }
 
-            # Check if any transition params are present
-            transition_keys = ['strategy', 'step_interval_ms', 'step_size']
-            has_options = any(k in kwargs and kwargs[k] is not None for k in transition_keys)
-
-            if has_options:
-                payload = {"characters": characters}
-                if kwargs.get('strategy'):
-                    payload['strategy'] = kwargs['strategy']
-                if kwargs.get('step_interval_ms') is not None:
-                    payload['step_interval_ms'] = kwargs['step_interval_ms']
-                if kwargs.get('step_size') is not None:
-                    payload['step_size'] = kwargs['step_size']
-                await self._post_local(payload)
+            if options:
+                await self._post_local({"characters": characters, **options})
             else:
-                await self._post_local(characters) # Send raw list
+                await self._post_local(characters)  # Send raw list
         else:
             # RW API
             await self._post_rw(characters)

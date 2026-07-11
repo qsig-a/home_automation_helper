@@ -1,10 +1,9 @@
-import pytest
 from unittest.mock import patch, AsyncMock
 from fastapi.testclient import TestClient
 from fastapi import HTTPException
 from app.config import Settings
-from fastapi import HTTPException
 import app.sayings.sayings as say
+from app.main import ActionConfig
 
 @patch("app.main.get_and_send_art", new_callable=AsyncMock)
 def test_get_random_art_success(
@@ -24,12 +23,14 @@ def test_get_random_art_success(
 
     # Verify get_and_send_art was called with the correct parameters
     mock_get_and_send_art.assert_called_once_with(
-        art_func=say.GetSingleRandArt,
-        success_message="Random art queued",
-        error_message="Error getting art",
+        config=ActionConfig(
+            func=say.GetSingleRandArt,
+            success_message="Random art queued",
+            error_message="Error getting art",
+            source='rw'
+        ),
         settings=mock_settings,
-        connector=mock_vestaboard_connector,
-        source='rw'
+        connector=mock_vestaboard_connector
     )
 
 @patch("app.main.get_and_send_art", new_callable=AsyncMock)
@@ -74,12 +75,14 @@ def test_get_random_art_local_success(
     assert response.json() == expected_response
 
     mock_get_and_send_art.assert_called_once_with(
-        art_func=say.GetSingleRandArt,
-        success_message="Random art queued (Local)",
-        error_message="Error getting art",
+        config=ActionConfig(
+            func=say.GetSingleRandArt,
+            success_message="Random art queued (Local)",
+            error_message="Error getting art",
+            source='local'
+        ),
         settings=mock_settings,
         connector=mock_vestaboard_connector,
-        source="local",
         strategy=None,
         step_interval_ms=None,
         step_size=None
@@ -101,12 +104,14 @@ def test_get_random_art_local_success_with_params(
     assert response.json() == expected_response
 
     mock_get_and_send_art.assert_called_once_with(
-        art_func=say.GetSingleRandArt,
-        success_message="Random art queued (Local)",
-        error_message="Error getting art",
+        config=ActionConfig(
+            func=say.GetSingleRandArt,
+            success_message="Random art queued (Local)",
+            error_message="Error getting art",
+            source='local'
+        ),
         settings=mock_settings,
         connector=mock_vestaboard_connector,
-        source="local",
         strategy="column",
         step_interval_ms=1000,
         step_size=2

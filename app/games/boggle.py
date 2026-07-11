@@ -1,4 +1,4 @@
-from random import choice, shuffle
+from secrets import choice, SystemRandom
 from typing import List, Tuple, Dict, Any
 
 # --- Constants ---
@@ -6,7 +6,6 @@ from typing import List, Tuple, Dict, Any
 LETTER_PLACEHOLDER = 1  # Indicates where a rolled letter should be placed
 BOUNDARY_START = 66     # Initial value for boundary cells in the 'start' grid
 BOUNDARY_END = 63       # Value for boundary cells in the 'end' grid
-EMPTY_CELL = 0          # Represents an empty cell in the template
 ASCII_LOWERCASE_OFFSET = 96 # Offset to convert 'a'..'z' to 1..26 (ord('a') - 1)
 
 # --- Boggle Dice Definitions ---
@@ -56,56 +55,48 @@ END_ROW_5x5: List[int] = [5,0,0,0,0,0,0,66,66,66,66,66,66,66,0,0,0,0,34,48,27,27
 BOGGLE_CONFIG: Dict[int, Dict[str, Any]] = {
     4: {
         "dice": BOGGLE_DICE_4x4,
+        "dice_int": [[ord(c.lower()) - ASCII_LOWERCASE_OFFSET for c in die] for die in BOGGLE_DICE_4x4],
         "begin_row": BEGIN_ROW_4x4,
         "mid_rows": MID_ROWS_TEMPLATE_4x4,
+        "placeholders": [(r, c) for r, row in enumerate(MID_ROWS_TEMPLATE_4x4) for c, cell in enumerate(row) if cell == LETTER_PLACEHOLDER],
         "end_row": END_ROW_4x4
     },
     5: {
         "dice": BOGGLE_DICE_5x5,
+        "dice_int": [[ord(c.lower()) - ASCII_LOWERCASE_OFFSET for c in die] for die in BOGGLE_DICE_5x5],
         "begin_row": None, # No separate begin row for 5x5 in original logic
         "mid_rows": MID_ROWS_TEMPLATE_5x5,
+        "placeholders": [(r, c) for r, row in enumerate(MID_ROWS_TEMPLATE_5x5) for c, cell in enumerate(row) if cell == LETTER_PLACEHOLDER],
         "end_row": END_ROW_5x5
     }
 }
 
-def _roll_dice_and_get_letters(dice_set: List[List[str]]) -> List[int]:
+# ⚡ Bolt: Pre-calculate flat templates for start and end grids to avoid dynamic
+# O(R*C) list extensions and transformations on every request.
+for size, config in BOGGLE_CONFIG.items():
+    start_template = []
+    if config["begin_row"]:
+        start_template.append(config["begin_row"])
+    start_template.extend(config["mid_rows"])
+    start_template.append(config["end_row"])
+    config["start_template"] = start_template
+
+    # Calculate absolute coordinates for placeholders in the flat grid
+    abs_placeholders = []
+    offset = 1 if config["begin_row"] else 0
+    for r, c in config["placeholders"]:
+        abs_placeholders.append((r + offset, c))
+    config["abs_placeholders"] = abs_placeholders
+
+    # Pre-calculate the end grid boundary state
+    config["end_template"] = [
+        [BOUNDARY_END if cell == BOUNDARY_START else cell for cell in row]
+        for row in start_template
+    ]
+
+def _roll_dice_and_get_letters(dice_set_int: List[List[int]]) -> List[int]:
     """Rolls the dice and returns a list of letter numbers."""
-    shuffled_dice = dice_set[:]
-    shuffle(shuffled_dice)
-    letters = [choice(die) for die in shuffled_dice]
-    return [ord(letter.lower()) - ASCII_LOWERCASE_OFFSET for letter in letters]
-
-def _populate_grid(template: List[List[int]], letters: List[int]) -> List[List[int]]:
-    """Populates a grid template with letters."""
-    # ⚡ Bolt: Using list comprehension instead of deepcopy for performance
-    populated_grid = [row[:] for row in template]
-    shuffled_letters = letters[:]
-    shuffle(shuffled_letters)
-
-    letter_idx = 0
-    for r_idx, row in enumerate(populated_grid):
-        for c_idx, cell in enumerate(row):
-            if cell == LETTER_PLACEHOLDER:
-                if letter_idx < len(shuffled_letters):
-                    populated_grid[r_idx][c_idx] = shuffled_letters[letter_idx]
-                    letter_idx += 1
-                else:
-                    raise RuntimeError("Not enough letters for placeholders.")
-    
-    if letter_idx != len(shuffled_letters):
-        raise RuntimeError("More letters than placeholders.")
-
-    return populated_grid
-
-def _create_end_grid(start_grid: List[List[int]]) -> List[List[int]]:
-    """Creates the end grid by modifying boundary markers."""
-    # ⚡ Bolt: Using list comprehension instead of deepcopy for performance
-    end_grid = [row[:] for row in start_grid]
-    for row in end_grid:
-        for i, cell in enumerate(row):
-            if cell == BOUNDARY_START:
-                row[i] = BOUNDARY_END
-    return end_grid
+    return [choice(die) for die in dice_set_int]
 
 def generate_boggle_grids(size: int) -> Tuple[List[List[int]], List[List[int]]]:
     """
@@ -115,17 +106,19 @@ def generate_boggle_grids(size: int) -> Tuple[List[List[int]], List[List[int]]]:
         raise ValueError(f"Unsupported Boggle size: {size}.")
 
     config = BOGGLE_CONFIG[size]
-    letter_numbers = _roll_dice_and_get_letters(config["dice"])
-    populated_mid_rows = _populate_grid(config["mid_rows"], letter_numbers)
 
-    start_grid: List[List[int]] = []
-    # ⚡ Bolt: Using slice [:] instead of deepcopy for performance
-    if config["begin_row"]:
-        start_grid.append(config["begin_row"][:])
+    # ⚡ Bolt: Use precomputed templates to avoid O(R*C) allocation and iteration overhead per request.
+    start_grid = [row[:] for row in config["start_template"]]
+    end_grid = [row[:] for row in config["end_template"]]
 
-    start_grid.extend(populated_mid_rows)
-    start_grid.append(config["end_row"][:])
+    letter_numbers = _roll_dice_and_get_letters(config["dice_int"])
+    # 🛡️ Sentinel: Use cryptographically secure randomness to ensure unpredictable game states
+    SystemRandom().shuffle(letter_numbers)
 
-    end_grid = _create_end_grid(start_grid)
+    # Populate both grids concurrently using pre-calculated absolute placeholder indices
+    for i, (r, c) in enumerate(config["abs_placeholders"]):
+        char = letter_numbers[i]
+        start_grid[r][c] = char
+        end_grid[r][c] = char
 
     return start_grid, end_grid

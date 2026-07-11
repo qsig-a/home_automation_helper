@@ -1,25 +1,45 @@
 import pytest
-import pytest_asyncio
 import asyncio # Added import for asyncio
-from fastapi import FastAPI, HTTPException
+from fastapi import Request, HTTPException
 from fastapi.testclient import TestClient
 from unittest.mock import AsyncMock, patch, MagicMock
 
-from app.main import app
 from app.config import Settings
+from app.main import get_vestaboard_connector
 from app.connectors.vestaboard import (
-    VestaboardConnector,
     VestaboardError,
     VestaboardAuthError,
     VestaboardInvalidCharsError
 )
-from app.models import MessageClass, BoggleClass
-import app.sayings.sayings as say
-import app.games.boggle as bg
 
 # Basic test to ensure the file is created and pytest can find it
 def test_initial_setup():
     assert True
+
+
+@pytest.mark.asyncio
+async def test_get_vestaboard_connector_success():
+    """Tests that get_vestaboard_connector returns the connector when present."""
+    mock_request = MagicMock(spec=Request)
+    mock_connector = AsyncMock()
+    mock_request.app.state.vestaboard_connector = mock_connector
+
+    connector = await get_vestaboard_connector(mock_request)
+    assert connector is mock_connector
+
+
+@pytest.mark.asyncio
+async def test_get_vestaboard_connector_missing():
+    """Tests that get_vestaboard_connector raises 500 when connector is missing."""
+    mock_request = MagicMock(spec=Request)
+    # Explicitly set to None to simulate missing connector
+    mock_request.app.state.vestaboard_connector = None
+
+    with pytest.raises(HTTPException) as exc_info:
+        await get_vestaboard_connector(mock_request)
+
+    assert exc_info.value.status_code == 500
+    assert "Vestaboard connector not initialized" in exc_info.value.detail
 
 
 # --- Test for GET / endpoint ---
@@ -46,9 +66,7 @@ def test_post_message_success(client: TestClient, mock_vestaboard_connector: Asy
 def test_post_message_empty_payload(client: TestClient):
     """Tests posting an empty message."""
     response = client.post("/message", json={"message": ""})
-    assert response.status_code == 400 # Based on current main.py logic
-    # The detail could be more specific, but current main.py raises HTTPException(400) before model validation for empty string
-    # assert response.json() == {"detail": "No message content provided."} # This would be ideal
+    assert response.status_code == 422 # Due to Pydantic min_length validation
 
 def test_post_message_no_content_provided(client: TestClient):
     """Tests posting with no message content, which should be caught by pydantic model."""
@@ -132,8 +150,7 @@ def test_post_message_local_with_parameters(client: TestClient, mock_vestaboard_
 def test_post_message_local_empty_payload(client: TestClient):
     """Tests posting an empty local message."""
     response = client.post("/message/local", json={"message": ""})
-    assert response.status_code == 400
-    assert response.json() == {"detail": "No message content provided."}
+    assert response.status_code == 422 # Due to Pydantic min_length validation
 
 def test_post_message_local_no_content_provided(client: TestClient):
     """Tests posting to local endpoint with no message content (Pydantic validation)."""
@@ -212,19 +229,44 @@ async def test_start_boggle_game_success(
     # A more direct way to test the background task logic would be to test schedule_end_boggle_display directly.
 
 
-def test_start_boggle_game_invalid_size(client: TestClient):
-    """Tests Boggle game start with invalid size."""
+def test_start_boggle_game_invalid_size_pydantic(client: TestClient):
+    """Tests Boggle game start with invalid size via Pydantic validation."""
     response = client.post("/games/boggle", json={"size": 3})
-    assert response.status_code == 400
-    assert response.json() == {"detail": "Invalid Boggle size. Must be 4 or 5."}
+    assert response.status_code == 422
 
+@pytest.mark.asyncio
+async def test_start_boggle_game_invalid_size_handler():
+    """Tests Boggle game start with invalid size bypassing Pydantic validation to hit handler logic."""
+    from app.main import start_boggle_game
+    from app.models import BoggleClass
+    from fastapi import BackgroundTasks
+
+    # Bypass validation by constructing directly
+    item = BoggleClass.model_construct(size=3)
+    bg_tasks = BackgroundTasks()
+    mock_connector = AsyncMock()
+
+    with pytest.raises(HTTPException) as exc_info:
+        await start_boggle_game(item=item, background_tasks=bg_tasks, connector=mock_connector)
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail == "Invalid Boggle size. Must be 4 or 5."
+
+@patch("app.main.log.exception")
 @patch("app.main.bg.generate_boggle_grids")
-def test_start_boggle_game_grid_generation_error(mock_generate_grids: MagicMock, client: TestClient):
+def test_start_boggle_game_grid_generation_error(
+    mock_generate_grids: MagicMock,
+    mock_log_exception: MagicMock,
+    client: TestClient
+):
     """Tests error during Boggle grid generation."""
-    mock_generate_grids.side_effect = ValueError("Grid generation failed")
+    test_error = Exception("Unexpected grid generation failure")
+    mock_generate_grids.side_effect = test_error
     response = client.post("/games/boggle", json={"size": 4})
     assert response.status_code == 500
     assert response.json() == {"detail": "Error creating game grids"}
+    mock_log_exception.assert_called_once()
+    assert "Error generating Boggle grids:" in mock_log_exception.call_args[0][0]
 
 @patch("app.main.bg.generate_boggle_grids")
 def test_start_boggle_game_vestaboard_auth_error(
@@ -355,6 +397,38 @@ async def test_boggle_background_task_sends_end_grid_error(
     assert "Error sending Boggle end grid in background task" in mock_log_error.call_args[0][0]
 
 
+@pytest.mark.asyncio
+@patch("app.main.log.error")
+@patch("app.main.asyncio.sleep", new_callable=AsyncMock)
+async def test_schedule_end_boggle_display_error_logging(
+    mock_asyncio_sleep: AsyncMock,
+    mock_log_error: MagicMock,
+):
+    """
+    Test that _schedule_end_boggle_display logs an error if sending the end grid fails.
+    This tests the module-level function directly.
+    """
+    from app.main import _schedule_end_boggle_display
+    mock_connector = AsyncMock()
+    # Configure the mock to raise an exception
+    test_exception = Exception("Direct call send error")
+    mock_connector.send_array.side_effect = test_exception
+
+    test_grid = [[1]]
+
+    await _schedule_end_boggle_display(test_grid, mock_connector)
+
+    mock_asyncio_sleep.assert_called_once_with(200)
+    mock_connector.send_array.assert_called_once_with(test_grid, source='rw')
+
+    mock_log_error.assert_called_once()
+    logged_msg = mock_log_error.call_args[0][0]
+    assert "Error sending Boggle end grid in background task:" in logged_msg
+    assert "Direct call send error" in logged_msg
+    # exc_info=True should be passed
+    assert mock_log_error.call_args[1].get('exc_info') is True
+
+
 # --- Tests for Quote Endpoints (/sfw_quote, /nsfw_quote) ---
 
 # Helper function to avoid code duplication for SFW and NSFW tests
@@ -443,7 +517,7 @@ async def test_get_quote_db_disabled(
     response = client.get(endpoint_path)
     
     assert response.status_code == 404
-    assert f"{expected_error_msg_prefix}: Quote not found or DB disabled" in response.json()["detail"]
+    assert f"{expected_error_msg_prefix}: Data not found or DB disabled" in response.json()["detail"]
 
 
 @pytest.mark.parametrize(
@@ -474,7 +548,7 @@ async def test_get_quote_none_returned(
 
     response = client.get(endpoint_path)
     assert response.status_code == 404
-    assert f"{expected_error_msg_prefix}: Quote not found or DB disabled" in response.json()["detail"]
+    assert f"{expected_error_msg_prefix}: Data not found or DB disabled" in response.json()["detail"]
 
 
 @pytest.mark.parametrize(
@@ -578,82 +652,3 @@ def test_get_quote_unexpected_error(
     assert response.status_code == 500
     assert f"{expected_error_msg_prefix}: An unexpected internal error occurred" in response.json()["detail"]
 
-# --- Tests for POST /message/local endpoint ---
-def test_post_message_local_success(client: TestClient, mock_vestaboard_connector: AsyncMock):
-    """Tests successful message posting via Local API."""
-    test_message = "Hello Local Vestaboard"
-    response = client.post("/message/local", json={"message": test_message})
-    assert response.status_code == 200
-    assert response.json() == {"message": "Message sent successfully (Local)"}
-    mock_vestaboard_connector.send_message.assert_called_once_with(
-        test_message,
-        source='local',
-        strategy=None,
-        step_interval_ms=None,
-        step_size=None
-    )
-
-def test_post_message_local_with_transitions(client: TestClient, mock_vestaboard_connector: AsyncMock):
-    """Tests posting a message via Local API with transition parameters."""
-    test_message = "Transition Local"
-    strategy = "column"
-    step_interval_ms = 3000
-    step_size = 2
-    response = client.post("/message/local", json={
-        "message": test_message,
-        "strategy": strategy,
-        "step_interval_ms": step_interval_ms,
-        "step_size": step_size
-    })
-    assert response.status_code == 200
-    assert response.json() == {"message": "Message sent successfully (Local)"}
-    mock_vestaboard_connector.send_message.assert_called_once_with(
-        test_message,
-        source='local',
-        strategy=strategy,
-        step_interval_ms=step_interval_ms,
-        step_size=step_size
-    )
-
-def test_post_message_local_empty_payload(client: TestClient):
-    """Tests posting an empty message via Local API."""
-    response = client.post("/message/local", json={"message": ""})
-    assert response.status_code == 400
-    # Current main.py logic raises HTTPException(400) before model validation for empty string
-
-def test_post_message_local_no_content_provided(client: TestClient):
-    """Tests posting with no message content, which should be caught by pydantic model via Local API."""
-    response = client.post("/message/local", json={}) # Empty JSON
-    assert response.status_code == 422 # Unprocessable Entity due to Pydantic validation
-
-def test_post_message_local_invalid_chars_error(client: TestClient, mock_vestaboard_connector: AsyncMock):
-    """Tests VestaboardInvalidCharsError handling via Local API."""
-    test_message = "Invalid char ~"
-    mock_vestaboard_connector.send_message.side_effect = VestaboardInvalidCharsError("Invalid character")
-    response = client.post("/message/local", json={"message": test_message})
-    assert response.status_code == 422
-    assert "Error sending message: Invalid characters. Invalid character" in response.json()["detail"]
-
-def test_post_message_local_auth_error(client: TestClient, mock_vestaboard_connector: AsyncMock):
-    """Tests VestaboardAuthError handling via Local API."""
-    test_message = "Auth error test"
-    mock_vestaboard_connector.send_message.side_effect = VestaboardAuthError("Auth failed")
-    response = client.post("/message/local", json={"message": test_message})
-    assert response.status_code == 503
-    assert "Error sending message: Vestaboard authentication error." in response.json()["detail"]
-
-def test_post_message_local_general_vestaboard_error(client: TestClient, mock_vestaboard_connector: AsyncMock):
-    """Tests general VestaboardError handling via Local API."""
-    test_message = "General error test"
-    mock_vestaboard_connector.send_message.side_effect = VestaboardError("API error")
-    response = client.post("/message/local", json={"message": test_message})
-    assert response.status_code == 502
-    assert "Error sending message: Error communicating with Vestaboard." in response.json()["detail"]
-
-def test_post_message_local_unexpected_error(client: TestClient, mock_vestaboard_connector: AsyncMock):
-    """Tests handling of unexpected errors during message posting via Local API."""
-    test_message = "Unexpected error test"
-    mock_vestaboard_connector.send_message.side_effect = Exception("Something broke")
-    response = client.post("/message/local", json={"message": test_message})
-    assert response.status_code == 500
-    assert "Error sending message: An unexpected internal error occurred." in response.json()["detail"]

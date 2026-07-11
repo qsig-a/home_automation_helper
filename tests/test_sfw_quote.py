@@ -1,9 +1,9 @@
-import pytest
 from unittest.mock import patch, AsyncMock
 from fastapi.testclient import TestClient
 from app.config import Settings
 from fastapi import HTTPException
 import app.sayings.sayings as say
+from app.main import ActionConfig
 
 @patch("app.main.get_and_send_quote", new_callable=AsyncMock)
 def test_get_sfw_quote_success(
@@ -22,12 +22,14 @@ def test_get_sfw_quote_success(
     assert response.json() == expected_response
 
     mock_get_and_send_quote.assert_called_once_with(
-        quote_func=say.GetSingleRandSfwS,
-        success_message="Random SFW quote queued",
-        error_message="Error getting SFW quote",
+        config=ActionConfig(
+            func=say.GetSingleRandSfwS,
+            success_message="Random SFW quote queued",
+            error_message="Error getting SFW quote",
+            source='rw'
+        ),
         settings=mock_settings,
-        connector=mock_vestaboard_connector,
-        source='rw'
+        connector=mock_vestaboard_connector
     )
 
 @patch("app.main.get_and_send_quote", new_callable=AsyncMock)
