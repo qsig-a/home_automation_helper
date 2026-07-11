@@ -1,6 +1,11 @@
 import pytest
-from unittest.mock import AsyncMock
-from app.connectors.vestaboard import VestaboardConnector
+import httpx
+from unittest.mock import AsyncMock, MagicMock
+from app.connectors.vestaboard import (
+    VestaboardConnector,
+    VestaboardFingerprintError,
+    VestaboardError,
+)
 from app.config import Settings
 
 @pytest.fixture
@@ -62,6 +67,48 @@ async def test_send_message_local(real_settings):
     assert isinstance(kwargs['json'], list)
     assert kwargs['json'][0][0] == 1
     assert kwargs['headers']['X-Vestaboard-Local-Api-Key'] == "local_key"
+
+def _mock_response_raising(status_code: int) -> AsyncMock:
+    """Builds a mock httpx response whose raise_for_status() raises an
+    HTTPStatusError carrying a real response with the given status code."""
+    request = httpx.Request("POST", "https://rw.vestaboard.com/")
+    response = httpx.Response(
+        status_code,
+        json={"status": "error", "message": "dup", "type": "FingerprintMatch"},
+        request=request,
+    )
+    mock_resp = AsyncMock()
+    mock_resp.status_code = status_code
+    mock_resp.raise_for_status = MagicMock(
+        side_effect=httpx.HTTPStatusError(
+            "err", request=request, response=response
+        )
+    )
+    return mock_resp
+
+
+@pytest.mark.asyncio
+async def test_post_rw_409_raises_fingerprint_error(real_settings):
+    """A 409 FingerprintMatch from the RW API must raise the dedicated
+    VestaboardFingerprintError (not the generic VestaboardError)."""
+    connector = VestaboardConnector(real_settings)
+    connector._rw_client.post = AsyncMock(return_value=_mock_response_raising(409))
+
+    with pytest.raises(VestaboardFingerprintError):
+        await connector.send_message("Already on board", source="rw")
+
+
+@pytest.mark.asyncio
+async def test_post_rw_500_raises_generic_error(real_settings):
+    """Non-409 RW errors must still raise the generic VestaboardError and
+    must NOT be treated as a fingerprint match."""
+    connector = VestaboardConnector(real_settings)
+    connector._rw_client.post = AsyncMock(return_value=_mock_response_raising(500))
+
+    with pytest.raises(VestaboardError) as exc_info:
+        await connector.send_message("Boom", source="rw")
+    assert not isinstance(exc_info.value, VestaboardFingerprintError)
+
 
 @pytest.mark.asyncio
 async def test_send_array_local_with_options(real_settings):

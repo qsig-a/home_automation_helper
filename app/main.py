@@ -15,8 +15,13 @@ from app.connectors.vestaboard import (
     VestaboardConnector,
     VestaboardError,
     VestaboardAuthError,
-    VestaboardInvalidCharsError
+    VestaboardInvalidCharsError,
+    VestaboardFingerprintError
 )
+
+# How many times to re-draw a random quote/art when the board already
+# displays an identical message (RW API FingerprintMatch / HTTP 409).
+MAX_FINGERPRINT_RETRIES = 3
 
 log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -65,6 +70,10 @@ async def handle_vestaboard_action(
     except VestaboardAuthError as e:
         log.error(f"{error_prefix}: Authentication error. {e}", exc_info=True)
         raise HTTPException(status_code=503, detail=f"{error_prefix}: Vestaboard authentication error.")
+    except VestaboardFingerprintError:
+        # Benign: the board already shows this message. Let the caller decide
+        # whether to re-roll (random endpoints) rather than reporting a failure.
+        raise
     except VestaboardError as e:
         log.error(f"{error_prefix}: Vestaboard API error. {e}", exc_info=True)
         raise HTTPException(status_code=502, detail=f"{error_prefix}: Error communicating with Vestaboard.")
@@ -83,17 +92,36 @@ async def get_and_send_quote(
     **kwargs
 ) -> Dict[str, str]:
     try:
-        data = await asyncio.to_thread(quote_func, settings=settings)
-        if data is None:
-            log.warning(f"{error_message}: Quote function returned None (DB disabled or no quote found).")
-            raise HTTPException(status_code=404, detail=f"{error_message}: Quote not found or DB disabled")
+        # The board rejects a message identical to what it already shows
+        # (FingerprintMatch). Since these endpoints serve a *random* quote,
+        # re-draw a different one and retry a few times before giving up.
+        for attempt in range(1, MAX_FINGERPRINT_RETRIES + 1):
+            data = await asyncio.to_thread(quote_func, settings=settings)
+            if data is None:
+                log.warning(f"{error_message}: Quote function returned None (DB disabled or no quote found).")
+                raise HTTPException(status_code=404, detail=f"{error_message}: Quote not found or DB disabled")
 
-        await handle_vestaboard_action(
-            lambda: connector.send_message(data, source=source, **kwargs),
-            error_message
+            try:
+                await handle_vestaboard_action(
+                    lambda: connector.send_message(data, source=source, **kwargs),
+                    error_message
+                )
+            except VestaboardFingerprintError:
+                log.info(
+                    f"{success_message}: quote already displayed "
+                    f"(attempt {attempt}/{MAX_FINGERPRINT_RETRIES}); re-rolling."
+                )
+                continue
+
+            log.info(f"Successfully sent quote to board: {success_message}")
+            return {"message": success_message}
+
+        # Every re-roll matched the board. Report gracefully, not as an error.
+        log.warning(
+            f"{error_message}: gave up after {MAX_FINGERPRINT_RETRIES} attempts; "
+            "quote already displayed on board."
         )
-        log.info(f"Successfully sent quote to board: {success_message}")
-        return {"message": success_message}
+        return {"message": f"{success_message} (quote already displayed on board; no change made)"}
     except HTTPException:
         raise
     except ConnectionError as e:
@@ -113,25 +141,42 @@ async def get_and_send_art(
     **kwargs
 ) -> Dict[str, str]:
     try:
-        result = await asyncio.to_thread(art_func, settings=settings)
-        if result is None:
-            log.warning(f"{error_message}: Art function returned None (DB disabled or no art found).")
-            raise HTTPException(status_code=404, detail=f"{error_message}: Art not found or DB disabled")
+        # As with quotes, re-draw a different random art piece if the board
+        # already displays an identical one (FingerprintMatch).
+        for attempt in range(1, MAX_FINGERPRINT_RETRIES + 1):
+            result = await asyncio.to_thread(art_func, settings=settings)
+            if result is None:
+                log.warning(f"{error_message}: Art function returned None (DB disabled or no art found).")
+                raise HTTPException(status_code=404, detail=f"{error_message}: Art not found or DB disabled")
 
-        title = "Unknown"
-        if isinstance(result, tuple):
-            data, fetched_title = result
-            if fetched_title:
-                title = fetched_title
-        else:
-            data = result
+            title = "Unknown"
+            if isinstance(result, tuple):
+                data, fetched_title = result
+                if fetched_title:
+                    title = fetched_title
+            else:
+                data = result
 
-        await handle_vestaboard_action(
-            lambda: connector.send_array(data, source=source, **kwargs),
-            error_message
+            try:
+                await handle_vestaboard_action(
+                    lambda: connector.send_array(data, source=source, **kwargs),
+                    error_message
+                )
+            except VestaboardFingerprintError:
+                log.info(
+                    f"{success_message}: art already displayed "
+                    f"(attempt {attempt}/{MAX_FINGERPRINT_RETRIES}); re-rolling."
+                )
+                continue
+
+            log.info(f"Successfully sent art to board: {success_message}")
+            return {"message": success_message, "title": title}
+
+        log.warning(
+            f"{error_message}: gave up after {MAX_FINGERPRINT_RETRIES} attempts; "
+            "art already displayed on board."
         )
-        log.info(f"Successfully sent art to board: {success_message}")
-        return {"message": success_message, "title": title}
+        return {"message": f"{success_message} (art already displayed on board; no change made)", "title": "Unknown"}
     except HTTPException:
         raise
     except ConnectionError as e:

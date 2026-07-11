@@ -24,6 +24,12 @@ class VestaboardInvalidCharsError(VestaboardError):
     """Error for invalid characters in a text message."""
     pass
 
+class VestaboardFingerprintError(VestaboardError):
+    """Raised when the RW API rejects a message (HTTP 409) because the
+    resulting board is identical to what is already displayed
+    (Vestaboard 'FingerprintMatch'). This is a benign condition, not a failure."""
+    pass
+
 # Pre-compiled regex for validating characters in messages
 VALID_CHARS_REGEX = re.compile(r"^[A-Za-z0-9!@$\(\)\-+&=;:'\"\%,./?° \n]*$")
 
@@ -135,6 +141,12 @@ class VestaboardConnector:
             log.info("Successfully sent message via RW API.")
         except httpx.HTTPStatusError as e:
             log.error(f"RW API HTTP error: {e.response.status_code} - {e.response.text}")
+            # A 409 means the rendered board matches what's already displayed
+            # (FingerprintMatch). This is benign, so surface it distinctly.
+            if e.response.status_code == 409:
+                raise VestaboardFingerprintError(
+                    "Message already displayed on the Vestaboard."
+                ) from e
             raise VestaboardError(f"RW API error: {e.response.status_code}") from e
         except httpx.RequestError as e:
             log.error(f"RW API network error: {e}")

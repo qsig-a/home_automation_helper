@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m pytest tests/test_quote_reroll.py tests/test_vestaboard_connector.py -q)",
+      "Bash(command -v poetry)",
+      "Bash(poetry run *)",
+      "Bash(poetry env *)",
+      "Bash(python -m pip show pytest)",
+      "Bash(python -c \"import fastapi, httpx; print\\('fastapi', fastapi.__version__, 'httpx', httpx.__version__\\)\")",
+      "Bash(python -c \"import pytest_asyncio\")"
+    ]
+  }
+}
