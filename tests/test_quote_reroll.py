@@ -1,8 +1,17 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from app.main import get_and_send_quote
+from app.main import get_and_send_quote, ActionConfig
 from app.connectors.vestaboard import VestaboardFingerprintError, VestaboardError
+
+
+def _quote_config(func):
+    return ActionConfig(
+        func=func,
+        success_message="Random SFW quote queued",
+        error_message="Error getting SFW quote",
+        source="rw",
+    )
 
 
 @pytest.mark.asyncio
@@ -17,12 +26,9 @@ async def test_reroll_on_fingerprint_then_succeeds(mock_settings):
     quote_func = MagicMock(side_effect=["Quote already up", "A fresh quote"])
 
     result = await get_and_send_quote(
-        quote_func=quote_func,
-        success_message="Random SFW quote queued",
-        error_message="Error getting SFW quote",
+        config=_quote_config(quote_func),
         settings=mock_settings,
         connector=connector,
-        source="rw",
     )
 
     assert connector.send_message.call_count == 2
@@ -40,12 +46,9 @@ async def test_reroll_gives_up_gracefully(mock_settings):
     quote_func = MagicMock(return_value="Same quote every time")
 
     result = await get_and_send_quote(
-        quote_func=quote_func,
-        success_message="Random SFW quote queued",
-        error_message="Error getting SFW quote",
+        config=_quote_config(quote_func),
         settings=mock_settings,
         connector=connector,
-        source="rw",
     )
 
     assert connector.send_message.call_count == 3
@@ -64,12 +67,9 @@ async def test_non_fingerprint_error_is_not_retried(mock_settings):
 
     with pytest.raises(HTTPException) as exc_info:
         await get_and_send_quote(
-            quote_func=quote_func,
-            success_message="Random SFW quote queued",
-            error_message="Error getting SFW quote",
+            config=_quote_config(quote_func),
             settings=mock_settings,
             connector=connector,
-            source="rw",
         )
 
     assert exc_info.value.status_code == 502
