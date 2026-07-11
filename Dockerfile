@@ -15,4 +15,4 @@ ADD poetry.lock poetry.lock
 # Install dependencies
 RUN poetry config virtualenvs.create false && poetry install --no-root --only main
 
-CMD [ "poetry", "run", "fastapi", "run", "./app/main.py", "--port", "80" ]
+CMD [ "poetry", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "80" ]

@@ -207,9 +207,9 @@ Follow these steps to run the application on your local machine:
 5.  **Run the application:**
     Once the dependencies are installed and your `.env` file is configured, you can start the FastAPI application using Uvicorn:
     ```bash
-    poetry run fastapi dev app/main.py
+    poetry run uvicorn app.main:app --reload
     ```
-    The application will typically be available at `http://127.0.0.1:8000`. The `dev` command enables auto-reloading when code changes are detected.
+    The application will typically be available at `http://127.0.0.1:8000`. The `--reload` flag enables auto-reloading when code changes are detected.
 
 ### Docker
 
