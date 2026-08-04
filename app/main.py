@@ -142,7 +142,7 @@ class PayloadSizeLimitMiddleware:
         # Check Content-Length header first for early rejection
         content_length = 0
         for name, value in scope.get("headers", []):
-            if name.lower() == b"content-length":
+            if name == b"content-length":
                 try:
                     content_length = int(value)
                     if content_length > self.max_upload_size:
