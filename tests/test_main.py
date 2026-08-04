@@ -652,3 +652,29 @@ def test_get_quote_unexpected_error(
     assert response.status_code == 500
     assert f"{expected_error_msg_prefix}: An unexpected internal error occurred" in response.json()["detail"]
 
+
+# --- Tests for UvicornInfoFilter ---
+import logging
+from app.main import UvicornInfoFilter
+
+def test_uvicorn_info_filter():
+    """Tests that UvicornInfoFilter correctly renames uvicorn.error below WARNING to uvicorn.info."""
+    f = UvicornInfoFilter()
+
+    # Test case 1: name is uvicorn.error, level is INFO
+    record = logging.LogRecord("uvicorn.error", logging.INFO, "pathname", 1, "msg", (), None)
+    result = f.filter(record)
+    assert result is True
+    assert record.name == "uvicorn.info"
+
+    # Test case 2: name is uvicorn.error, level is WARNING
+    record = logging.LogRecord("uvicorn.error", logging.WARNING, "pathname", 1, "msg", (), None)
+    result = f.filter(record)
+    assert result is True
+    assert record.name == "uvicorn.error"
+
+    # Test case 3: name is something else
+    record = logging.LogRecord("other.logger", logging.INFO, "pathname", 1, "msg", (), None)
+    result = f.filter(record)
+    assert result is True
+    assert record.name == "other.logger"
