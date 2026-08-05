@@ -7,12 +7,20 @@ RUN pip install --upgrade pip
 # Install Poetry
 RUN pip install poetry
 
+# Create a non-root user and group
+RUN groupadd -r appuser && useradd -r -g appuser appuser
+
+WORKDIR /app
+
 # Copy project files
-ADD app /app
-ADD pyproject.toml pyproject.toml
-ADD poetry.lock poetry.lock
+ADD --chown=appuser:appuser app ./app
+ADD --chown=appuser:appuser pyproject.toml pyproject.toml
+ADD --chown=appuser:appuser poetry.lock poetry.lock
 
 # Install dependencies
 RUN poetry config virtualenvs.create false && poetry install --no-root --only main
 
-CMD [ "poetry", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "80" ]
+# Switch to non-root user
+USER appuser
+
+CMD [ "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080" ]

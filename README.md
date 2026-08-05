@@ -226,7 +226,7 @@ You can also run the application using Docker.
 
     **Option A: Passing variables directly**
     ```bash
-    docker run -d -p 8000:80 \
+    docker run -d -p 8000:8080 \
       --env VESTABOARD_RW_API_KEY="your_vestaboard_rw_api_key" \
       --env VESTABOARD_LOCAL_API_KEY="your_vestaboard_local_api_key" \
       --env VESTABOARD_LOCAL_API_IP="192.168.1.100" \
@@ -239,7 +239,7 @@ You can also run the application using Docker.
     **Option B: Using an environment file**
     Create a `.env` file (as described in the "Local Development" setup) in your project root. Then run:
     ```bash
-    docker run -d -p 8000:80 \
+    docker run -d -p 8000:8080 \
       --env-file .env \
       --name home-automation-app \
       home-automation-server
