@@ -17,6 +17,7 @@ def reset_rate_limiter_state():
 async def test_rate_limiter_allows_first_request():
     mock_request = MagicMock(spec=Request)
     mock_request.client.host = "192.168.1.1"
+    mock_request.headers = {}
 
     # The first request should not raise an HTTPException
     await rate_limiter(mock_request)
@@ -25,6 +26,7 @@ async def test_rate_limiter_allows_first_request():
 async def test_rate_limiter_blocks_second_request_same_ip():
     mock_request = MagicMock(spec=Request)
     mock_request.client.host = "192.168.1.1"
+    mock_request.headers = {}
 
     await rate_limiter(mock_request)
 
@@ -39,9 +41,11 @@ async def test_rate_limiter_blocks_second_request_same_ip():
 async def test_rate_limiter_allows_second_request_different_ip():
     mock_request1 = MagicMock(spec=Request)
     mock_request1.client.host = "192.168.1.1"
+    mock_request1.headers = {}
 
     mock_request2 = MagicMock(spec=Request)
     mock_request2.client.host = "192.168.1.2"
+    mock_request2.headers = {}
 
     await rate_limiter(mock_request1)
 
@@ -52,6 +56,7 @@ async def test_rate_limiter_allows_second_request_different_ip():
 async def test_rate_limiter_expires_entry():
     mock_request = MagicMock(spec=Request)
     mock_request.client.host = "192.168.1.1"
+    mock_request.headers = {}
 
     with patch("time.monotonic") as mock_monotonic:
         # First request at t=100.0 (using non-zero to avoid the default 0.0 value issue in `_client_request_times.get(client_ip, 0.0)`)
@@ -67,6 +72,7 @@ async def test_rate_limiter_expires_entry():
 async def test_rate_limiter_fallback_ip():
     mock_request = MagicMock(spec=Request)
     mock_request.client = None
+    mock_request.headers = {}
 
     await rate_limiter(mock_request)
 
@@ -75,3 +81,30 @@ async def test_rate_limiter_fallback_ip():
 
     assert exc_info.value.status_code == 429
     assert "Rate limit exceeded" in exc_info.value.detail
+
+
+@pytest.mark.asyncio
+async def test_rate_limiter_uses_x_forwarded_for():
+    mock_request = MagicMock(spec=Request)
+    mock_request.client.host = "192.168.1.1" # this should be ignored
+    mock_request.headers = {"x-forwarded-for": "203.0.113.195"}
+
+    # We mock _client_request_times to see where it stores the request time
+    import app.main
+
+    await rate_limiter(mock_request)
+    assert "203.0.113.195" in app.main._client_request_times
+    assert "192.168.1.1" not in app.main._client_request_times
+
+@pytest.mark.asyncio
+async def test_rate_limiter_uses_x_forwarded_for_multiple_ips():
+    mock_request = MagicMock(spec=Request)
+    mock_request.client.host = "192.168.1.1" # this should be ignored
+    mock_request.headers = {"x-forwarded-for": "203.0.113.195, 70.41.3.18, 150.172.238.178"}
+
+    import app.main
+
+    await rate_limiter(mock_request)
+    assert "150.172.238.178" in app.main._client_request_times
+    assert "203.0.113.195" not in app.main._client_request_times
+    assert "192.168.1.1" not in app.main._client_request_times

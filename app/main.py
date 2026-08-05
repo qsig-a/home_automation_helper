@@ -97,7 +97,11 @@ async def rate_limiter(request: Request):
             }
             _last_cleanup_time = now
 
-        client_ip = request.client.host if request.client else "unknown"
+        forwarded_for = request.headers.get("x-forwarded-for")
+        if forwarded_for:
+            client_ip = forwarded_for.split(",")[-1].strip()
+        else:
+            client_ip = request.client.host if request.client else "unknown"
 
         last_request_time = _client_request_times.get(client_ip, 0.0)
         time_since_last = now - last_request_time
